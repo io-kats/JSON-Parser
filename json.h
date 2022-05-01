@@ -1005,8 +1005,9 @@ namespace ers
 						++p; --len; 
 					}
 
-					size_type idx;
-					size_type idx_len = util::to_u64(p, end, &idx);
+					u64 temp;
+					size_type idx_len = util::to_u64(p, end, &temp);
+					size_type idx = (size_type)temp;
 					if (idx_len == 0)
 					{
 						current_node = nullptr;
