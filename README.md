@@ -10,7 +10,6 @@ A simple JSON parser.
 * [Setup](#setup)
 * [Usage](#usage)
 * [Project Status](#project-status)
-* [Room for Improvement](#room-for-improvement)
 * [Inspirations](#inspirations)
 * [Credit](#credit)
 
@@ -50,11 +49,12 @@ Simple C++ with a little help from the C standard library, namely
 
 To run this project on Linux, go to wherever you cloned the repo and run (should work with g++ 9.3.0):
 ```
-$ git clone https://github.com/io-kats/ers_json.git
-$ cd ../ers_json
+$ git clone https://github.com/io-kats/json-parser.git
+$ cd ../json-parser
 $ make
 $ ./example.out
 ```
+Similarly for Raspberry Pi 4 and raspbian.
 
 For Windows:
 - on MSVC, add the header file and test source file to a new VS project, define the `_CRT_SECURE_NO_WARNINGS` macro and run it 
@@ -62,8 +62,8 @@ For Windows:
 - compile with MinGW and g++:
 
 ```
-$ git clone https://github.com/io-kats/ers_json.git
-$ cd ../ers_json
+$ git clone https://github.com/io-kats/json-parser.git
+$ cd ../json-parser
 $ g++ example.cpp -o example.exe
 $ ./example.exe
 ```
@@ -74,8 +74,8 @@ How to start:
 Do this in at least on of your source files:
 
 ```
-#define ERS_JSON_IMPLEMENTATION
-#include "ers_json.h"
+#define JSON_IMPLEMENTATION
+#include "json.h"
 ```
 This can be in any .cpp file, but it should be in only one of them.
 
@@ -151,7 +151,7 @@ NUMBER: -9223372036854775808
 EOF: done!
 ```
 
-print_nodes can be disabled by defining ERS_JSON_NDEBUG 
+print_nodes can be disabled by defining JSON_NDEBUG 
 before including the header file.
 
 You can also print out an error message if there's an error:
@@ -251,17 +251,17 @@ printf("root%s = %zd\n", path4, n); // prints: root[2][-1] = 9223372036854775807
 There's more examples in the example.cpp file, including how to use the FlatJson class,
 so definitely take a look at it.
 
-Defining ERS_JSON_NDEBUG before the header file deactivates all 
+Defining JSON_NDEBUG before the header file deactivates all 
 debugging facilities, including some methods:
 
 ```
-#define ERS_JSON_NDEBUG
-#define ERS_JSON_IMPLEMENTATION
-#include "ers_json.h"
+#define JSON_NDEBUG
+#define JSON_IMPLEMENTATION
+#include "json.h"
 ```
 
 and strtod can be replaced 
-with your own implementation by defining the macro ERS_JSON_STRTOF(dest, begin, end),
+with your own implementation by defining the macro JSON_STRTOF(dest, begin, end),
 for example if you want to use charconv's "from_chars":
 
 ```
@@ -274,15 +274,15 @@ void my_strtod(T* dest, const char* begin, const char* end)
 	assert(((end) == result.ptr) && (result.ec == std::errc()) && "Failed to parse float.");
 }
 
-#define ERS_JSON_STRTOD(dest, begin, end) my_strtod(dest, begin, end)
-#define ERS_JSON_IMPLEMENTATION
-#include "ers_json.h"
+#define JSON_STRTOD(dest, begin, end) my_strtod(dest, begin, end)
+#define JSON_IMPLEMENTATION
+#include "json.h"
 ```
-or you can completely disable it, if you don't need to read in any floats (bar the 2 extra hex types):
+or you can completely disable it, if you don't need to read in any numbers (bar the 2 extra hex types):
 ```
-#define ERS_JSON_NO_FLOAT
-#define ERS_JSON_IMPLEMENTATION
-#include "ers_json.h"
+#define JSON_NO_FLOAT
+#define JSON_IMPLEMENTATION
+#include "json.h"
 ```
 
 For more details, take a look at the header file. The examples are all
