@@ -286,7 +286,8 @@ namespace ers
 			VALID_JSON,
 			INVALID_TOKENS,
 			SYNTACTIC_ERRORS,
-			CAPACITY_EXCEEDED
+			CAPACITY_EXCEEDED,
+			DUPLICATE_KEY
 		};
 
 		/** 
@@ -458,6 +459,13 @@ namespace ers
 			 * @return false if capacity exceeded, true otherwise.
 			 */
 			bool pushNode();
+
+			/** Checks if there's are duplicate keys in an object.
+			 * 
+			 * @param object_node the node for the object whose keys need to be checked.
+			 * @return false if there's a duplicate key, true otherwise.
+			 */
+			bool checkForDuplicateKey(const JsonNode* object_node);
 
 			/**
 			 * Error logging internal function like printf.
@@ -1334,9 +1342,12 @@ namespace ers
 				if (!result) break;
 				m_currentToken.type = JsonTokenType::JSON_KEY;
 
+				result = checkForDuplicateKey(complex_node);
+				if (!result) break;
+
 				result = pushNode();
 				if (!result) break;
-                
+				               
 				JsonNode* last_node_ptr = getLastNode();
 				if (previous_key_ptr != nullptr) previous_key_ptr->next = last_node_ptr;
 				previous_key_ptr = last_node_ptr;
@@ -1408,6 +1419,30 @@ namespace ers
                 result = false;
             }
 			return result;			
+		}
+
+		bool JsonParser::checkForDuplicateKey(const JsonNode* object_node)
+		{
+			bool result = true;
+
+			const char* new_key_ptr = m_currentToken.data;
+			const size_type new_key_length = m_currentToken.length;
+
+			const JsonNode* current_key = object_node->GetFirst();
+			while (current_key) 
+			{
+				JSON_ASSERTF(current_key->IsKey(), "%s", "JsonParser::checkForDuplicateKey: Node should be key");
+				if (current_key->as_sv.length == new_key_length 
+					&& memcmp(current_key->as_sv.data, new_key_ptr, new_key_length) == 0)
+				{
+					m_errorCode = JsonErrorCode::DUPLICATE_KEY;
+					appendToErrorLog("Duplicate property key at line %u\n", (u32)m_currentLine);
+					result = false;
+					break;
+				}
+				current_key = current_key->GetNext();
+			}
+			return result;
 		}
 
 		void JsonParser::logInvalidTokenError(JsonTokenType actual_type, const char* message)
