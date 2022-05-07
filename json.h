@@ -24,12 +24,109 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #ifndef JSON_INCLUDE_H
 #define JSON_INCLUDE_H
 
-#include <cstring> // strerror, memcpy, memcmp, strlen
-#include <cstdarg> // va_start, va_end
-#include <cerrno> // errno
-#include <cstdio> // printf, fprintf, stderr
-#include <cstdlib> // exit
-#include <cstdint> // uint8_t, uint32_t
+// Replace with your own implementations if need be.
+#ifdef JSON_IMPLEMENTATION
+
+	#ifndef JSON_uint8_t
+		#include <cstdint> // fixed width types
+		typedef uint8_t JSON_uint8_t;
+		typedef uint32_t JSON_uint32_t;
+		typedef uint64_t JSON_uint64_t;
+		typedef int64_t JSON_int64_t;
+	#endif
+	
+	#ifndef JSON_strlen
+		#include <cstring>
+		#define JSON_strlen strlen
+	#endif
+
+	#ifndef JSON_memset
+		#include <cstring>
+		#define JSON_memset memset
+	#endif
+
+	#ifndef JSON_memcpy
+		#include <cstring>
+		#define JSON_memcpy memcpy
+	#endif
+
+	#ifndef JSON_memcmp
+		#include <cstring>
+		#define JSON_memcmp memcmp
+	#endif
+
+	#ifndef JSON_NDEBUG
+		#include <cstdio> // printf, fprintf, vsnprintf
+		#include <cerrno> // errno
+		#include <cstring> // strerror
+		#include <cstdarg> // va_start, va_end
+		#include <cstdlib> // exit
+
+		#ifndef JSON_HERE
+			#define JSON_HERE() printf("Here: %s, %d, %s\n", __FILE__, __LINE__, __func__)
+		#endif
+
+		#ifndef JSON_ASSERT
+			#define JSON_ASSERT(EXPR) \
+			do { \
+				if(!(EXPR)) { \
+					fprintf(stdout, "%s(%d): Assertion \"%s\" failed. errno: %s.\n", __FILE__, __LINE__, #EXPR, (errno == 0 ? "None" : strerror(errno))); \
+					exit(EXIT_FAILURE); \
+				} \
+			} while (0)
+		#endif
+
+		#ifndef JSON_ASSERTF
+			#define JSON_ASSERTF(EXPR, FMT, ...) \
+			do { \
+				if(!(EXPR)) { \
+					fprintf(stdout, "%s(%d): Assertion \"%s\" failed. errno: %s.", __FILE__, __LINE__, #EXPR, (errno == 0 ? "None" : strerror(errno))); \
+					fprintf(stdout, FMT"\n", __VA_ARGS__); \
+					exit(EXIT_FAILURE); \
+				} \
+			} while (0)
+		#endif
+	#else
+		#ifndef JSON_HERE
+			#define JSON_HERE()
+		#elif
+			#undef JSON_HERE
+		#endif
+
+		#ifndef JSON_ASSERT
+			#define JSON_ASSERT(EXPR)
+		#elif
+			#undef JSON_ASSERT
+		#endif
+
+		#ifndef JSON_ASSERTF
+			#define JSON_ASSERTF(EXPR, FMT, ...)
+		#elif
+			#undef JSON_ASSERTF
+		#endif		
+	#endif
+
+	#ifndef JSON_STRTOD // define this macro if you have your own strtod implementation.
+		#include <cstdlib> // strtod
+
+		// begin, end for the valid range that needs to be parsed.
+		#define JSON_STRTOD(dest, begin, end) \
+		do { \
+			char* endptr; \
+			*(dest) = strtod((begin), &endptr); \
+			JSON_ASSERT(((end) == endptr) && "Failed to parse float."); \
+		} while (0)
+	#endif
+
+	#ifdef JSON_NO_FLOAT // define this macro if you don't intend to read (non-hex bit representation) floats.
+		#ifndef JSON_STRTOD
+			#define JSON_STRTOD(dest, begin, end)
+		#elif
+			#undef JSON_STRTOD
+		#endif
+	#endif
+
+#endif
 
 namespace ers
 {
@@ -98,13 +195,14 @@ namespace ers
 		 *  Working examples and test in example.cpp.
 		 */
 
-		using u8 = uint8_t;
-		using u32 = uint32_t;
-		using u64 = uint64_t;
-		using s64 = int64_t;
+		using u8 = JSON_uint8_t;
+		using u32 = JSON_uint32_t;
+		using u64 = JSON_uint64_t;
+		using s64 = JSON_int64_t;
 		using f32 = float;
 		using f64 = double;
 		using size_type = size_t;
+		constexpr size_type SIZE_TYPE_MAX = SIZE_MAX;
 
 		enum class JsonTokenType
 		{
@@ -287,6 +385,7 @@ namespace ers
 			INVALID_TOKENS,
 			SYNTACTIC_ERRORS,
 			CAPACITY_EXCEEDED,
+			MAX_DEPTH_EXCEEDED,
 			DUPLICATE_KEY
 		};
 
@@ -298,8 +397,6 @@ namespace ers
 		class FlatJson
 		{
 		public:
-			friend class JsonParser;
-
 			FlatJson();
 
 			JsonNode& operator[] (size_t i);
@@ -351,13 +448,175 @@ namespace ers
 			 */
 			size_type GetCapacity() const;
 
-		private:
+			/**
+			 * Setter for m_count.
+			 * 
+			 * @param count the capacity of the node buffer.
+			 */
+			void SetCount(size_type count);
 
+		private:
 			JsonNode m_nodes[NODE_CAPACITY];
 			size_type m_count;
 		};
 
+
+		/**
+		 * Duplicate key policies. Use these for checking whether JSON objects in a JSON file has more than one property with the same key.
+		 * e.g. { "id": 5, "id": "name" } should be an invalid object and not parseable.
+		 * Please create your own, if you need a different one, e.g. a dynamically allocated array.
+		 * It should have the 2 methods that EmptyDuplicateKeyPolicy has, i.e. CheckForDuplicateKey and Reset.
+		 */
+
+		/**
+		 * Empty duplicate key policy that does nothing, i.e. allows duplicate property keys. It's the default policy.
+		 */
+		class EmptyDuplicateKeyPolicy
+		{
+		public:
+			/**
+			 * Checks if a key is a duplicate.
+			 * 
+			 * @param token_data points to the token of the key to be checked.
+			 * @param token_length length of the token to be checked.
+			 * @param object_node node of object to which the token belongs.
+			 * @return true if there is -no- duplicate, false otherwise.
+			 */
+			bool CheckForDuplicateKey(const char* token_data, size_type token_length, const JsonNode* object_node);
+
+			/**
+			 * Does nothing. See hash set policy.
+			 */
+			void Reset();
+		};
+
+		/**
+		 * Compares a key with the rest of the keys in an object and ONLY that object.
+		 * In the end, it's O(N^2) per object, but only works in the current object, avoids allocations
+		 * and might be fast for small objects that don't have other objects as any of their properties.
+		 */
+		class LinearDuplicateKeyPolicy
+		{
+		public:
+
+			/**
+			 * Checks if a key is a duplicate.
+			 * 
+			 * @param token_data points to the token of the key to be checked.
+			 * @param token_length length of the token to be checked.
+			 * @param object_node node of object to which the token belongs.
+			 * @return true if there is -no- duplicate, false otherwise.
+			 */
+			bool CheckForDuplicateKey(const char* token_data, size_type token_length, const JsonNode* object_node);
+
+			/**
+			 * Does nothing. See hash set policy.
+			 */
+			void Reset();
+		};
+
+		/**
+		 * Uses a linear probing hash set to store all property keys, along with a pointer to their objects.
+		 * Statically allocated.
+		 */
+		template <size_type CAPACITY>
+		class HashSetDuplicateKeyPolicy
+		{
+		private:
+			class JsonKeyHashSet
+			{
+			private:
+				struct SetEntry
+				{
+					const char* token_data;
+					size_type token_length;
+					const JsonNode* object_node;
+
+					/**
+					 * Checks if the entry is empty.
+					 * 
+					 * @return true if empty, false otherwise.
+					 */
+					bool IsEmpty() const;
+
+					/**
+					 * Checks if the entry is equal to an other entry.
+					 * 
+					 * @return true if equal, false otherwise.
+					 */
+					bool Equals(const SetEntry& other) const;
+
+					/**
+					 * Produces a hash value from a set entry.
+					 *  
+					 * @param entry entry to be hashed.
+					 * @return the hash value.
+					 */
+					size_type GetHash() const;
+				};
+
+			public:
+				JsonKeyHashSet();
+
+				/**
+				 * Resets the hash set to having only empty entries.
+				 */
+				void Reset();
+
+				/**
+				 * Adds a new entry to the table if it's not already include.
+				 *  
+				 * @param token_data points to the token of the key to be checked.
+				 * @param token_length length of the token to be checked.
+				 * @param object_node node of object to which the token belongs.
+				 * @return true if there the entry was added, false otherwise.
+				 */
+				bool TryAdd(const char* token_data, size_type token_length, const JsonNode* object_node);
+
+			private:
+
+				/**
+				 * Prints all entries.
+				 */
+				void print();
+
+			private:
+
+				SetEntry m_entries[CAPACITY];
+			};
+			
+		public:
+
+			/**
+			 * Checks if a key is a duplicate.
+			 * 
+			 * @param token_data points to the token of the key to be checked.
+			 * @param token_length length of the token to be checked.
+			 * @param object_node node of object to which the token belongs.
+			 * @return true if there is -no- duplicate, false otherwise.
+			 */
+			bool CheckForDuplicateKey(const char* token_data, size_type token_length, const JsonNode* object_node)
+			{
+				return m_keyHashSet.TryAdd(token_data, token_length, object_node);
+			}
+
+			/**
+			 * Resets the hash set. Used in the parser when we need to re-parse.
+			 */
+			void Reset()
+			{
+				m_keyHashSet.Reset();
+			}
+
+		private:
+			JsonKeyHashSet m_keyHashSet;
+		};
+
+#ifndef JSON_NDEBUG
 		constexpr size_type JSON_ERROR_MESSAGE_LENGTH = 255;
+#endif
+		constexpr size_type JSON_MAX_DEPTH = SIZE_TYPE_MAX;
+		template <typename DuplicateKeyPolicy = EmptyDuplicateKeyPolicy>
 		class JsonParser
 		{
 		public:
@@ -374,13 +633,14 @@ namespace ers
 			 * @param length_ length of buffer containing JSON file.
 			 * @param buffer pointer to token buffer.
 			 * @param capacity capacity of token buffer.			 
+			 * @param max_depth max JSON depth allowed.			 
 			 */
-			JsonParser(const char* data_, size_type length_, JsonNode* buffer = nullptr, size_type capacity = 0);
+			JsonParser(const char* data_, size_type length_, JsonNode* buffer = nullptr, size_type capacity = 0, size_type max_depth = JSON_MAX_DEPTH);
 
 			/**
 			 * Same as above, the non-default constructor is a wrapper over this.		 
 			 */
-			void SetUp(const char* data_, size_type length_, JsonNode* buffer = nullptr, size_type capacity = 0);
+			void SetUp(const char* data_, size_type length_, JsonNode* buffer = nullptr, size_type capacity = 0, size_type max_depth = JSON_MAX_DEPTH);
 
 			/** 
 			 * Parses the JSON file into a JsonNode buffer.
@@ -442,6 +702,13 @@ namespace ers
 			 */
 			bool parseArray();
 			bool parseObject();
+
+			/**
+			 * Increments current JSON depth.
+			 * 
+			 * @return false if depth exceeded, true if not.
+			 */
+			bool incrementDepth();
 
 			/**
 			 * Checks if the token is the expected one, if not, it finds what sort of error there is.
@@ -532,8 +799,16 @@ namespace ers
 
 			JsonToken m_currentToken;
 			size_type m_currentLine;
+
+			size_type m_currentDepth;
+			size_type m_maxDepth;
+
+			DuplicateKeyPolicy m_duplicateKeyPolicy;
+
+#ifndef JSON_NDEBUG
 			char m_errorLog[JSON_ERROR_MESSAGE_LENGTH + 1];
 			char* m_errorLogPos;
+#endif
 		};	
 
 		namespace util 
@@ -575,7 +850,7 @@ namespace ers
 			 * char buf[64] = { 0 }; size_type i = 0; size_type idx = 0;
 			 * while (idx < t->length)
 			 * {
-			 * 	u32 cp = ers::JsonParser::json_string_character_to_codepoint(t->data, &idx);
+			 * 	u32 cp = ers::JsonParser<DuplicateKeyPolicy>::json_string_character_to_codepoint(t->data, &idx);
 			 * 	buf[i++] = cp;
 			 * }
 			 * printf("%s\n", buf);
@@ -600,7 +875,7 @@ namespace ers
 			 * ers::JsonToken* t = json.GetValueNode(path, strlen(path));
 			 * char buf[64] = { 0 }; size_type new_length = 0;
 			 * if (t->type != ers::JsonTokenType::INVALID)
-			 *  new_length = ers::JsonParser::json_string_to_utf8(&buf[0], t->data, t->length));
+			 *  new_length = ers::JsonParser<DuplicateKeyPolicy>::json_string_to_utf8(&buf[0], t->data, t->length));
 			 * buf[new_length] = 0;
 			 * printf("%s\n", buf);
 			 */
@@ -653,54 +928,6 @@ namespace ers
 #endif // JSON_INCLUDE_H
 
 #ifdef JSON_IMPLEMENTATION
-
-#ifndef JSON_NDEBUG
-
-#define JSON_HERE() printf("Here: %s, %d, %s\n", __FILE__, __LINE__, __func__)
-
-#define JSON_ASSERT(EXPR) \
-do { \
-	if(!(EXPR)) { \
-		fprintf(stdout, "%s(%d): Assertion \"%s\" failed. errno: %s.\n", __FILE__, __LINE__, #EXPR, (errno == 0 ? "None" : strerror(errno))); \
-		exit(EXIT_FAILURE); \
-	} \
-} while (0)
-
-#define JSON_ASSERTF(EXPR, FMT, ...) \
-do { \
-	if(!(EXPR)) { \
-		fprintf(stdout, "%s(%d): Assertion \"%s\" failed. errno: %s.", __FILE__, __LINE__, #EXPR, (errno == 0 ? "None" : strerror(errno))); \
-		fprintf(stdout, FMT"\n", __VA_ARGS__); \
-		exit(EXIT_FAILURE); \
-	} \
-} while (0)
-
-#else
-
-#define JSON_HERE()
-#define JSON_ASSERTF(EXPR, FMT, ...)
-#define JSON_ASSERT(EXPR)
-
-#endif
-
-#ifndef JSON_STRTOD // define this macro if you have your own strtod implementation.
-
-#include <cstdlib> // strtod
-
-// begin, end for the valid range that needs to be parsed.
-#define JSON_STRTOD(dest, begin, end) \
-do { \
-	char* endptr; \
-	*(dest) = strtod((begin), &endptr); \
-	JSON_ASSERT(((end) == endptr) && "Failed to parse float."); \
-} while (0)
-
-#endif
-
-#ifdef JSON_NO_FLOAT // define this macro if you don't intend to read (non-hex bit representation) floats.
-#undef JSON_STRTOD
-#define JSON_STRTOD(dest, begin, end)
-#endif
 
 namespace ers
 {
@@ -1064,13 +1291,13 @@ namespace ers
 						s64 node_length;
 						node_data = current_node->as_sv.data;
 						node_length = (s64)current_node->as_sv.length;
-						if (*p == '\"' && len >= node_length && memcmp(p, node_data, node_length) == 0)
+						if (*p == '\"' && len >= node_length && JSON_memcmp(p, node_data, node_length) == 0)
 						{
 							p += node_length;
 							len -= node_length;
 							matched = true;
 						}
-						else if (*p != '\"' && len >= (node_length - 2) && memcmp(p, node_data + 1, node_length - 2) == 0)
+						else if (*p != '\"' && len >= (node_length - 2) && JSON_memcmp(p, node_data + 1, node_length - 2) == 0)
 						{
 							p += node_length - 2;
 							len -= node_length - 2;
@@ -1104,7 +1331,7 @@ namespace ers
 		FlatJson<NODE_CAPACITY>::FlatJson()
 		{
 			m_count = 0;
-			memset(&m_nodes[0], 0, NODE_CAPACITY * sizeof(JsonNode));
+			JSON_memset(&m_nodes[0], 0, NODE_CAPACITY * sizeof(JsonNode));
 		}
 
 		template <size_type NODE_CAPACITY>
@@ -1136,7 +1363,7 @@ namespace ers
 		template <size_type NODE_CAPACITY>
 		const JsonNode* FlatJson<NODE_CAPACITY>::GetValueNode(const char* path, const JsonNode* node) const
 		{
-			return get_value_node((node == nullptr) ? &m_nodes[0] : node, path, strlen(path));
+			return get_value_node((node == nullptr) ? &m_nodes[0] : node, path, JSON_strlen(path));
 		}	
 
 		template <size_type NODE_CAPACITY>
@@ -1193,12 +1420,168 @@ namespace ers
 			return NODE_CAPACITY;
 		}
 
-		JsonParser::JsonParser(const char* data_, size_type length_, JsonNode* buffer, size_type capacity)
+		template <size_type NODE_CAPACITY>
+		void FlatJson<NODE_CAPACITY>::SetCount(size_type count)
 		{
-			SetUp(data_, length_, buffer, capacity);
+			m_count = count;
+		}
+
+		bool EmptyDuplicateKeyPolicy::CheckForDuplicateKey(const char* token_data, size_type token_length, const JsonNode* object_node)
+		{
+			(void)token_data;
+			(void)token_length;
+			(void)object_node;
+			return true;
+		}
+
+		void EmptyDuplicateKeyPolicy::Reset() { }
+
+		bool LinearDuplicateKeyPolicy::CheckForDuplicateKey(const char* token_data, size_type token_length, const JsonNode* object_node)
+		{
+			bool result = true;
+
+			const JsonNode* current_key = object_node->GetFirst();
+			while (current_key) 
+			{
+				JSON_ASSERTF(current_key->IsKey(), "%s", "DefaultDuplicateKeyPolicy::CheckForDuplicateKey: Node should be key");
+				if (current_key->as_sv.length == token_length 
+					&& JSON_memcmp(current_key->as_sv.data, token_data, token_length) == 0)
+				{
+					result = false;
+					break;
+				}
+				current_key = current_key->GetNext();
+			}
+
+			return result;
+		}
+
+		void LinearDuplicateKeyPolicy::Reset() { }
+
+		template <size_type CAPACITY>
+		bool HashSetDuplicateKeyPolicy<CAPACITY>::JsonKeyHashSet::SetEntry::IsEmpty() const
+		{
+			return token_data == nullptr;
+		}
+
+		template <size_type CAPACITY>
+		bool HashSetDuplicateKeyPolicy<CAPACITY>::JsonKeyHashSet::SetEntry::Equals(const SetEntry& other) const
+		{
+			return this->object_node == other.object_node && this->token_length == other.token_length 
+				&& JSON_memcmp(this->token_data, other.token_data, this->token_length) == 0;
+		}
+
+		#define JSON_SIZE_T_BITS           ((sizeof(size_type)) * 8)
+		#define JSON_ROTATE_LEFT(val, n)   (((val) << (n)) | ((val) >> (JSON_SIZE_T_BITS - (n))))
+		#define JSON_ROTATE_RIGHT(val, n)  (((val) >> (n)) | ((val) << (JSON_SIZE_T_BITS - (n))))
+		template <size_type CAPACITY>
+		size_type HashSetDuplicateKeyPolicy<CAPACITY>::JsonKeyHashSet::SetEntry::GetHash() const
+		{					
+			size_t seed = token_length;
+			size_type hash = seed;
+
+			for (size_type i = 1; i < token_length - 1; ++i)
+			{
+				hash = JSON_ROTATE_LEFT(hash, 9) + (unsigned char)token_data[i];
+			}
+
+			size_type on = size_type(object_node);
+			const unsigned char* onp = reinterpret_cast<const unsigned char*>(&on);
+			for (size_type i = 0; i < sizeof(size_type); ++i)
+			{
+				hash = JSON_ROTATE_LEFT(hash, 9) + (unsigned char)onp[i];
+			}
+
+			// Thomas Wang 64-to-32 bit mix function, hopefully also works in 32 bits
+			hash ^= seed;
+			hash = (~hash) + (hash << 18);
+			hash ^= hash ^ JSON_ROTATE_RIGHT(hash, 31);
+			hash = hash * 21;
+			hash ^= hash ^ JSON_ROTATE_RIGHT(hash, 11);
+			hash += (hash << 6);
+			hash ^= JSON_ROTATE_RIGHT(hash, 22);
+			hash += seed;
+
+			return hash;
+		}
+
+		template <size_type CAPACITY>
+		HashSetDuplicateKeyPolicy<CAPACITY>::JsonKeyHashSet::JsonKeyHashSet() 
+		{
+			Reset();
+		}
+
+		template <size_type CAPACITY>
+		void HashSetDuplicateKeyPolicy<CAPACITY>::JsonKeyHashSet::Reset()
+		{
+			for (size_type i = 0; i < CAPACITY; ++i)
+			{
+				SetEntry& entry = m_entries[i];
+				entry.token_data = nullptr;
+				entry.token_length = 0;
+				entry.object_node = nullptr;
+			}
+		}
+
+		template <size_type CAPACITY>
+		bool HashSetDuplicateKeyPolicy<CAPACITY>::JsonKeyHashSet::TryAdd(const char* token_data, size_type token_length, const JsonNode* object_node) 
+		{
+			const SetEntry new_entry = { token_data, token_length, object_node };
+			const size_type idx0 = new_entry.GetHash() % CAPACITY;
+
+			size_type idx = idx0;
+			bool result = true;
+			while (idx < CAPACITY && !m_entries[idx].IsEmpty()) 
+			{
+				result = !m_entries[idx].Equals(new_entry);
+				if (!result) break;
+				++idx;
+			}
+			
+			if (idx == CAPACITY)
+			{
+				idx = 0;
+				while (idx < idx0 && !m_entries[idx].IsEmpty()) 
+				{
+					result = !m_entries[idx].Equals(new_entry);
+					if (!result) break;
+					++idx;
+				}
+				JSON_ASSERTF(idx < idx0, "%s", "HashSetDuplicateKeyPolicy::JsonKeyHashSet::TryAdd: The set is full.");
+				result = m_entries[idx].IsEmpty(); // if still true, then it must have found an empty slot.
+			}
+
+			if (result)
+			{
+				m_entries[idx] = new_entry;
+			}
+
+			return result;
+		}
+
+		template <size_type CAPACITY>
+		void HashSetDuplicateKeyPolicy<CAPACITY>::JsonKeyHashSet::print() 
+		{
+#ifndef JSON_NDEBUG
+			for (int i = 0; i < CAPACITY - 1; ++i)
+			{
+				SetEntry& entry = m_entries[i];
+				if (!entry.IsEmpty())
+				{
+					printf("%d: (%.*s, %u, %p)\n", i, (JSON_uint32_t)entry.token_length, entry.token_data, (JSON_uint32_t)entry.token_length, entry.object_node);
+				}
+			}
+#endif
+		}
+		
+		template <typename DuplicateKeyPolicy>
+		JsonParser<DuplicateKeyPolicy>::JsonParser(const char* data_, size_type length_, JsonNode* buffer, size_type capacity, size_type max_depth)
+		{
+			SetUp(data_, length_, buffer, capacity, max_depth);
 		}	
 
-		void JsonParser::SetUp(const char* data_, size_type length_, JsonNode* buffer, size_type capacity)
+		template <typename DuplicateKeyPolicy>
+		void JsonParser<DuplicateKeyPolicy>::SetUp(const char* data_, size_type length_, JsonNode* buffer, size_type capacity, size_type max_depth)
 		{
 			m_begin = data_;	
 			m_end = m_begin + length_;
@@ -1212,18 +1595,27 @@ namespace ers
 
 			m_currentLine = 1;
 
-			memset(&m_errorLog[0], 0, JSON_ERROR_MESSAGE_LENGTH + 1);
+			m_currentDepth = 0;
+
+			JSON_ASSERTF(max_depth <= JSON_MAX_DEPTH, "%s", "JsonParser::SetUp: The max depth cannot exceed the value of JSON_MAX_DEPTH.");
+			m_maxDepth = max_depth;
+
+#ifndef JSON_NDEBUG
+			JSON_memset(&m_errorLog[0], 0, JSON_ERROR_MESSAGE_LENGTH + 1);
 			m_errorLogPos = &m_errorLog[0];
+#endif
 		}	
 
+		template <typename DuplicateKeyPolicy>
 		template <size_type NODE_CAPACITY>
-		void JsonParser::Parse(FlatJson<NODE_CAPACITY>& flat_json)
+		void JsonParser<DuplicateKeyPolicy>::Parse(FlatJson<NODE_CAPACITY>& flat_json)
 		{
 			Parse(&flat_json[0], NODE_CAPACITY);
-			flat_json.m_count = m_nodeCount;
+			flat_json.SetCount(m_nodeCount);
 		}
 
-		void JsonParser::Parse(JsonNode* new_buffer, size_type new_capacity) 
+		template <typename DuplicateKeyPolicy>
+		void JsonParser<DuplicateKeyPolicy>::Parse(JsonNode* new_buffer, size_type new_capacity) 
 		{
 			if (new_buffer != nullptr)
 			{
@@ -1235,8 +1627,15 @@ namespace ers
 				m_tokenCapacity = new_capacity;
 
 				m_currentLine = 1;
-				memset(&m_errorLog[0], 0, JSON_ERROR_MESSAGE_LENGTH + 1);
+
+				m_currentDepth = 0;
+
+				m_duplicateKeyPolicy.Reset();
+
+#ifndef JSON_NDEBUG
+				JSON_memset(&m_errorLog[0], 0, JSON_ERROR_MESSAGE_LENGTH + 1);
 				m_errorLogPos = &m_errorLog[0];
+#endif
 			} 
 
 			const bool is_valid = IsValid();
@@ -1283,9 +1682,11 @@ namespace ers
 			}
 		}
 
-		bool JsonParser::parseArray() 
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::parseArray() 
 		{
-			bool result = true;
+			bool result = incrementDepth();
+			if (!result) return false;
 
 			m_currentToken = getNextToken();
 			if (m_currentToken.type == JsonTokenType::JSON_ARRAY_END) return result;
@@ -1325,9 +1726,11 @@ namespace ers
 			return result;
 		}
 
-		bool JsonParser::parseObject() 
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::parseObject() 
 		{
-			bool result = true;
+			bool result = incrementDepth();
+			if (!result) return false;
 
 			m_currentToken = getNextToken();
 			if (m_currentToken.type == JsonTokenType::JSON_OBJECT_END) return result;
@@ -1386,7 +1789,22 @@ namespace ers
 			return result;
 		}
 
-		inline bool JsonParser::expect(bool expected, const char* message) 
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::incrementDepth()
+		{
+			++m_currentDepth;
+			bool result = true;
+			if (m_currentDepth > m_maxDepth)
+			{
+				m_errorCode = JsonErrorCode::MAX_DEPTH_EXCEEDED;
+				appendToErrorLog("Exceeded maximum depth at line %u: current depth is %u\n", (u32)m_currentLine, (u32)m_currentDepth);
+				result = false;
+			}		
+			return result;	
+		}
+
+		template <typename DuplicateKeyPolicy>
+		inline bool JsonParser<DuplicateKeyPolicy>::expect(bool expected, const char* message) 
 		{
 			if (!expected)
 			{
@@ -1405,7 +1823,8 @@ namespace ers
 			return expected;
 		} 
 
-		bool JsonParser::pushNode() 
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::pushNode() 
 		{
             bool result = true;
             if (m_nodeCount < m_tokenCapacity) 
@@ -1421,31 +1840,20 @@ namespace ers
 			return result;			
 		}
 
-		bool JsonParser::checkForDuplicateKey(const JsonNode* object_node)
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::checkForDuplicateKey(const JsonNode* object_node)
 		{
-			bool result = true;
-
-			const char* new_key_ptr = m_currentToken.data;
-			const size_type new_key_length = m_currentToken.length;
-
-			const JsonNode* current_key = object_node->GetFirst();
-			while (current_key) 
+			bool result = m_duplicateKeyPolicy.CheckForDuplicateKey(m_currentToken.data, m_currentToken.length, object_node);
+			if (!result) 
 			{
-				JSON_ASSERTF(current_key->IsKey(), "%s", "JsonParser::checkForDuplicateKey: Node should be key");
-				if (current_key->as_sv.length == new_key_length 
-					&& memcmp(current_key->as_sv.data, new_key_ptr, new_key_length) == 0)
-				{
-					m_errorCode = JsonErrorCode::DUPLICATE_KEY;
-					appendToErrorLog("Duplicate property key at line %u\n", (u32)m_currentLine);
-					result = false;
-					break;
-				}
-				current_key = current_key->GetNext();
+				m_errorCode = JsonErrorCode::DUPLICATE_KEY;
+				appendToErrorLog("Duplicate property key at line %u\n", (u32)m_currentLine);
 			}
 			return result;
 		}
 
-		void JsonParser::logInvalidTokenError(JsonTokenType actual_type, const char* message)
+		template <typename DuplicateKeyPolicy>
+		void JsonParser<DuplicateKeyPolicy>::logInvalidTokenError(JsonTokenType actual_type, const char* message)
 		{
 			if (actual_type == JsonTokenType::INVALID)
 			{
@@ -1453,24 +1861,29 @@ namespace ers
 			}
 		}
 
-		void JsonParser::appendToErrorLog(const char* fmt, ...)
+		template <typename DuplicateKeyPolicy>
+		void JsonParser<DuplicateKeyPolicy>::appendToErrorLog(const char* fmt, ...)
 		{
+#ifndef JSON_NDEBUG
 			va_list args;
 			va_start(args, fmt);
 
 			size_type error_message_length = (m_errorLogPos - &m_errorLog[0]);
 			size_type error_message_rest = JSON_ERROR_MESSAGE_LENGTH + 1 - error_message_length;
 			int written_count = std::vsnprintf(m_errorLogPos, error_message_rest, fmt, args);		
-			JSON_ASSERTF(written_count >= 0, "%s", "JsonParser::appendToErrorLog: encoding error");
-			JSON_ASSERTF(error_message_length + written_count <= JSON_ERROR_MESSAGE_LENGTH, "%s", "JsonParser::appendToErrorLog: error message size exceeded");
+			JSON_ASSERTF(written_count >= 0, "%s", "JsonParser<DuplicateKeyPolicy>::appendToErrorLog: encoding error");
+			JSON_ASSERTF(error_message_length + written_count <= JSON_ERROR_MESSAGE_LENGTH, "%s", "JsonParser<DuplicateKeyPolicy>::appendToErrorLog: error message size exceeded");
 			m_errorLogPos += written_count;
 			
 			va_end(args);
+#endif
 		}
 
 		constexpr size_type JSON_INVALID_TOKEN_NEWLINES = 3;
-		void JsonParser::logInvalidTokenPosition() 
+		template <typename DuplicateKeyPolicy>	
+		void JsonParser<DuplicateKeyPolicy>::logInvalidTokenPosition() 
 		{
+#ifndef JSON_NDEBUG
 			const char* begin = m_currentToken.data;
 			const char* end = m_currentToken.data + m_currentToken.length;
 
@@ -1496,14 +1909,17 @@ namespace ers
 				(u32)m_currentToken.length, m_currentToken.data, 
 				(u32)(after_end - end), end
 			);
+#endif
 		}
 
-		JsonNode* JsonParser::getLastNode() 
+		template <typename DuplicateKeyPolicy>
+		JsonNode* JsonParser<DuplicateKeyPolicy>::getLastNode() 
 		{
 			return &m_nodeBuffer[m_nodeCount - 1];
 		}
 
-		void JsonParser::skipWhitespace() 
+		template <typename DuplicateKeyPolicy>
+		void JsonParser<DuplicateKeyPolicy>::skipWhitespace() 
 		{
 			while (m_pos != m_end && isWhitespace(*m_pos))
 			{
@@ -1511,7 +1927,8 @@ namespace ers
 			}	
 		}
 
-		JsonToken JsonParser::getNextToken() 
+		template <typename DuplicateKeyPolicy>
+		JsonToken JsonParser<DuplicateKeyPolicy>::getNextToken() 
 		{
 			JsonToken result;
 
@@ -1631,32 +2048,42 @@ namespace ers
 			return result;
 		}
 
-		bool JsonParser::IsValid() const
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::IsValid() const
 		{
 			return (m_errorCode == JsonErrorCode::VALID_JSON);
 		}	
 
-		size_type JsonParser::GetCount() const
+		template <typename DuplicateKeyPolicy>
+		size_type JsonParser<DuplicateKeyPolicy>::GetCount() const
 		{
 			return m_nodeCount;
 		}	
 
-		size_type JsonParser::GetCapacity() const
+		template <typename DuplicateKeyPolicy>
+		size_type JsonParser<DuplicateKeyPolicy>::GetCapacity() const
 		{
 			return m_tokenCapacity;
 		}	
 
-		JsonErrorCode JsonParser::GetErrorCode() const
+		template <typename DuplicateKeyPolicy>
+		JsonErrorCode JsonParser<DuplicateKeyPolicy>::GetErrorCode() const
 		{
 			return m_errorCode;
 		}
 
-		const char* JsonParser::GetErrorMessage() const
+		template <typename DuplicateKeyPolicy>
+		const char* JsonParser<DuplicateKeyPolicy>::GetErrorMessage() const
 		{
+#ifndef JSON_NDEBUG
 			return m_errorLog;
+#elif
+			return "";
+#endif
 		}
 
-		bool JsonParser::matchString()
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::matchString()
 		{
 			// Parse string.
 			++m_pos;	
@@ -1725,7 +2152,8 @@ namespace ers
 			return result;
 		}	
 
-		bool JsonParser::matchNumber()
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::matchNumber()
 		{
 			bool result = true;	
 
@@ -1797,7 +2225,8 @@ namespace ers
 			return result;
 		}	
 
-		bool JsonParser::matchLiteral(const char* s, u8 len)
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::matchLiteral(const char* s, u8 len)
 		{
 			bool result = true;	
 
@@ -1819,7 +2248,8 @@ namespace ers
 			return result;
 		}	
 
-		int JsonParser::matchFloatHex()
+		template <typename DuplicateKeyPolicy>
+		int JsonParser<DuplicateKeyPolicy>::matchFloatHex()
 		{
 			int result = 0;		
 
@@ -1842,32 +2272,38 @@ namespace ers
 			return result;
 		}	
 
-		bool JsonParser::isDigit(char ch) const
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::isDigit(char ch) const
 		{
 			return (ch >= '0' && ch <= '9');
 		}	
 
-		bool JsonParser::isHexDigit(char ch) const
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::isHexDigit(char ch) const
 		{
 			return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
 		}	
 
-		bool JsonParser::isWhitespace(char ch) const
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::isWhitespace(char ch) const
 		{
 			return (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r');
 		}	
 
-		bool JsonParser::isStructural(char ch) const
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::isStructural(char ch) const
 		{
 			return (ch == '{' || ch == '[' || ch == '}' || ch == ']' || ch == ':' || ch == ',');
 		}	
 
-		bool JsonParser::isValid(char ch) const
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::isValid(char ch) const
 		{
 			return isWhitespace(ch) || isStructural(ch) || isDigit(ch) || ch == 't' || ch == 'f' || ch == 'n';
 		}	
 
-		bool JsonParser::isPrimitiveValueToken(JsonToken* t) const
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::isPrimitiveValueToken(JsonToken* t) const
 		{
 			return t->type == JsonTokenType::JSON_TRUE
 				|| t->type == JsonTokenType::JSON_FALSE
@@ -2022,7 +2458,7 @@ namespace ers
 							result = (u32)'\n';
 							break;
 						default:
-							JSON_ASSERTF(false, "%s", "JsonParser::json_string_character_to_codepoint.");
+							JSON_ASSERTF(false, "%s", "JsonParser<DuplicateKeyPolicy>::json_string_character_to_codepoint.");
 						}				
 					}
 				}
@@ -2099,7 +2535,7 @@ namespace ers
 							}	
 
 							JSON_ASSERTF(codepoint < 0x110000,
-								"%s", "JsonParser::json_string_to_utf8: Invalid codepoint.");	
+								"%s", "JsonParser<DuplicateKeyPolicy>::json_string_to_utf8: Invalid codepoint.");	
 
 							// Decode to UTF-8
 							if (out)
@@ -2164,7 +2600,7 @@ namespace ers
 									*out++ = '\n';
 									break;
 								default:
-									JSON_ASSERTF(false, "%s", "JsonParser::json_string_to_utf8: unreachable.");
+									JSON_ASSERTF(false, "%s", "JsonParser<DuplicateKeyPolicy>::json_string_to_utf8: unreachable.");
 								}
 								++p;
 							}
@@ -2173,7 +2609,7 @@ namespace ers
 								JSON_ASSERTF(
 									ch == '0' || ch == 'a' ||  ch == 'b' ||  ch == 't' ||  ch == 'v' ||  ch == 'f' ||  ch == 'r' ||  ch == 'n', 
 									"%s", 
-									"JsonParser::json_string_to_utf8: problem with escaped characters.");
+									"JsonParser<DuplicateKeyPolicy>::json_string_to_utf8: problem with escaped characters.");
 								++p;
 								++len;
 							}	
@@ -2208,7 +2644,7 @@ namespace ers
 				}	
 
 				f32 result = 0;
-				memcpy((u8*)&result, (u8*)&x, sizeof(f32));
+				JSON_memcpy((u8*)&result, (u8*)&x, sizeof(f32));
 				return result;
 			}	
 
@@ -2224,7 +2660,7 @@ namespace ers
 				}	
 
 				f64 result = 0;
-				memcpy((u8*)&result, (u8*)&x, sizeof(f64));
+				JSON_memcpy((u8*)&result, (u8*)&x, sizeof(f64));
 				return result;
 			}	
 
@@ -2240,7 +2676,7 @@ namespace ers
 				}	
 
 				size_t result = p - s;
-				if (result > 20 || (result == 20 && memcmp(s, "18446744073709551615", 20) > 0)) 
+				if (result > 20 || (result == 20 && JSON_memcmp(s, "18446744073709551615", 20) > 0)) 
 				{
 					result = 0;
 				}
@@ -2268,8 +2704,8 @@ namespace ers
 				}	
 
 				size_t result = p - s;
-				if ((!sign && (result > 19 || (result == 19 && memcmp(s, "9223372036854775807", 19) > 0)))
-					|| (sign && (result > 20 || (result == 20 && memcmp(s, "-9223372036854775808", 20) > 0)))
+				if ((!sign && (result > 19 || (result == 19 && JSON_memcmp(s, "9223372036854775807", 19) > 0)))
+					|| (sign && (result > 20 || (result == 20 && JSON_memcmp(s, "-9223372036854775808", 20) > 0)))
 					) 
 				{
 					result = 0;

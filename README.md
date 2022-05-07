@@ -154,7 +154,7 @@ EOF: done!
 print_nodes can be disabled by defining JSON_NDEBUG 
 before including the header file.
 
-You can also print out an error message if there's an error:
+You can also print out an error message if there's an error (can be disabled if macro NDEBUG defined):
 
 ```
 if (!json_parser.IsValid())
@@ -172,6 +172,22 @@ Invalid token at line 2: null expected
     {
         "x" : 1.5,
 ...
+```
+
+You can control the duplicate property key checking policy like this:
+```
+ers::json::JsonParser<ers::json::LinearDuplicateKeyPolicy> json_parser(json_string, strlen(json_string), &buf[0], buf_size);
+
+OR
+
+ers::json::JsonParser<ers::json::HashSetDuplicateKeyPolicy<128>> json_parser(json_string, strlen(json_string), &buf[0], buf_size);
+```
+<i><b>The default is the EmptyDuplicateKeyPolicy policy, which does nothing, allows duplicate keys to exist and produces no error message for them. Please check json.h to see what the other 2 policies do.</b></i>
+
+You can also control the number of recursions the parser does by passing the maximum allowed depth as an argument to the constructor, e.g. with a max depth of 8:
+
+```
+ers::json::JsonParser json_parser(json_string, strlen(json_string), &buf[0], buf_size, 8);
 ```
 
 Getting a JSON string token and converting it to Unicode by using a 
@@ -261,7 +277,7 @@ debugging facilities, including some methods:
 ```
 
 and strtod can be replaced 
-with your own implementation by defining the macro JSON_STRTOF(dest, begin, end),
+with your own implementation by defining the macro JSON_STRTOD(dest, begin, end),
 for example if you want to use charconv's "from_chars":
 
 ```
@@ -281,6 +297,25 @@ void my_strtod(T* dest, const char* begin, const char* end)
 or you can completely disable it, if you don't need to read in any numbers (bar the 2 extra hex types):
 ```
 #define JSON_NO_FLOAT
+#define JSON_IMPLEMENTATION
+#include "json.h"
+```
+
+In fact, most stardard library functions can be replaced or disabled, should they not be available on your platform, e.g.:
+```
+void* my_memset(void* dest, int ch, size_t count)
+{
+	unsigned char* p = reinterpret_cast<unsigned char*>(dest);
+	unsigned char val = static_cast<unsigned char>(ch);
+	while (i < count)
+	{
+		*p++ = val;
+		++i;
+	}
+	return dest;
+}
+
+#define JSON_memset my_memset
 #define JSON_IMPLEMENTATION
 #include "json.h"
 ```

@@ -202,7 +202,7 @@ void example_with_flat_json()
 	// Create a FlatJson instance.
 	ers::json::FlatJson<64> flat_json;
 
-	ers::json::JsonParser json_parser(json_file.data, json_file.length);
+	ers::json::JsonParser<ers::json::LinearDuplicateKeyPolicy> json_parser(json_file.data, json_file.length);
 	json_parser.Parse(flat_json);
 
 	if (!json_parser.IsValid()) 
@@ -348,7 +348,7 @@ void test_serialize_and_deserialize_simple_random_generated_json_array()
 	// Parse the json file to make sure it is valid.
 	ers::json::FlatJson<1024> flat_json;
 	const char* json_file = &test_json_string[0];
-	ers::json::JsonParser json_parser(json_file, strlen(json_file));
+	ers::json::JsonParser<ers::json::HashSetDuplicateKeyPolicy<720>> json_parser(json_file, strlen(json_file));
 	json_parser.Parse(flat_json);	
 	
 	JSON_ASSERTF(json_parser.IsValid(), "%s", "Serialization was not successful, validation failed.");
@@ -423,15 +423,19 @@ int64_t read_input()
 	char ch = getchar();
 	while (ch != EOF && ch != '\n') 
 	{
-		if (ch >= '0' && ch <= '9')
-		{
-			buf[i++] = ch;
-		}
+		buf[i++] = ch;
 		ch = getchar();
 	}
 
+	int j = 0;
+	while (!(buf[j] >= '0' && buf[j] <= '9') && buf[j] != '\0') 
+	{
+		++j;
+	}
+
+
 	int64_t result = 0;
-	size_t ec = ers::json::util::to_s64(&buf[0], &buf[i], &result);
+	size_t ec = ers::json::util::to_s64(&buf[j], &buf[i], &result);
 	if (ec == 0)
 	{
 		result = -1;
