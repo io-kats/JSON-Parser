@@ -87,22 +87,28 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 			} while (0)
 		#endif
 	#else
+		#ifdef JSON_HERE
+			#undef JSON_HERE
+		#endif
+
+		#ifdef JSON_ASSERT
+			#undef JSON_ASSERT
+		#endif
+
+		#ifdef JSON_ASSERTF
+			#undef JSON_ASSERTF
+		#endif
+
 		#ifndef JSON_HERE
 			#define JSON_HERE()
-		#elif
-			#undef JSON_HERE
 		#endif
 
 		#ifndef JSON_ASSERT
 			#define JSON_ASSERT(EXPR)
-		#elif
-			#undef JSON_ASSERT
 		#endif
 
 		#ifndef JSON_ASSERTF
 			#define JSON_ASSERTF(EXPR, FMT, ...)
-		#elif
-			#undef JSON_ASSERTF
 		#endif		
 	#endif
 
