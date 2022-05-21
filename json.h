@@ -791,8 +791,6 @@ namespace ers
 			 * Internal helpers.
 			 */
 			void skipWhitespace();
-			bool isDigit(char ch) const;
-			bool isHexDigit(char ch) const;
 			bool isWhitespace(char ch) const;
 			bool isStructural(char ch) const;
 			bool isValid(char ch) const;
@@ -824,6 +822,12 @@ namespace ers
 
 		namespace util 
 		{
+			bool json_match_string(const char** pos, const char* end);
+			int json_match_float_hex(const char** pos, const char* end);
+			bool json_match_literal(const char** pos, const char* end, const char* s, u8 len);
+			bool json_match_number(const char** pos, const char* end);
+			bool is_digit(char ch);
+			bool is_hex_digit(char ch);
 			/**
 			 * Prints all JSON node from a buffer. If JSON_NDEBUG is defined, the function does nothing.
 			 */
@@ -2003,12 +2007,11 @@ namespace ers
             }
 
 			char ch = *m_pos;
-			if (isDigit(ch) || ch == '-')
+			if (util::is_digit(ch) || ch == '-')
 			{
 				const char* q = m_pos + 1;
 				if (q < m_end && *q == 'x')
 				{
-					m_pos += 2;
 					int rc = matchFloatHex();
 					switch (rc)
 					{
@@ -2041,19 +2044,19 @@ namespace ers
 			}
 			else if (ch == 't')
 			{
-				result.type = (matchLiteral("rue", 3)) ?
+				result.type = (matchLiteral("true", 4)) ?
 					JsonTokenType::JSON_TRUE : JsonTokenType::INVALID;
 				logInvalidTokenError(result.type, "true expected");
 			}
 			else if (ch == 'f')
 			{
-				result.type = (matchLiteral("alse", 4)) ?
+				result.type = (matchLiteral("false", 5)) ?
 					JsonTokenType::JSON_FALSE : JsonTokenType::INVALID;
 				logInvalidTokenError(result.type, "false expected");
 			}
 			else if (ch == 'n')
 			{
-				result.type = (matchLiteral("ull", 3)) ?
+				result.type = (matchLiteral("null", 4)) ?
 					JsonTokenType::JSON_NULL : JsonTokenType::INVALID;
 				logInvalidTokenError(result.type, "null expected");
 			}
@@ -2146,203 +2149,25 @@ namespace ers
 		template <typename DuplicateKeyPolicy>
 		bool JsonParser<DuplicateKeyPolicy>::matchString()
 		{
-			// Parse string.
-			++m_pos;	
-
-			while (m_pos < m_end && *m_pos != '\"')
-			{
-				u8 ch = *m_pos;
-				if (ch < 0x20 || ch == '/' || ch == '\"')
-				{
-					break;
-				}
-				else if (ch == '\\')
-				{
-					++m_pos;
-					ch = *m_pos;
-					if (ch == '\\' || ch == '/' || ch == '\"' || ch == '0' 
-						|| ch == 'a' || ch == 'b' || ch == 't' || ch == 'v' 
-						|| ch == 'f' || ch == 'r' || ch == 'n')
-					{
-						++m_pos;
-					}
-					else if (ch == 'u')
-					{
-						++m_pos;
-						for (u8 count = 0; count < 4; count++)
-						{
-							if (m_pos == m_end || !isHexDigit(*m_pos))
-							{
-								break;
-							}
-							++m_pos;
-						}
-					}
-					else
-					{
-						break;
-					}
-				}
-				else if (ch < 0xFF)
-				{
-					++m_pos;
-				}
-				else // assume utf-8 encoding
-				{
-					size_type len = util::utf8_len(*m_pos);
-					if (len == 0)
-					{
-						break;
-					}
-					else
-					{
-						m_pos += len;
-					}
-				}
-			}	
-
-			const bool result = (m_pos != m_end && *m_pos == '\"');	
-
-			// Only advance if the whole string has been accepted.
-			// If not, we are already at the start of the next token.
-			if (result)
-			{
-				++m_pos;
-			}	
-
-			return result;
+			return util::json_match_string(&m_pos, m_end);
 		}	
 
 		template <typename DuplicateKeyPolicy>
 		bool JsonParser<DuplicateKeyPolicy>::matchNumber()
 		{
-			bool result = true;	
-
-			if (m_pos != m_end && *m_pos == '-')
-			{
-				++m_pos;
-			}	
-
-			char ch = *m_pos;
-			if (ch == '0')
-			{
-				++m_pos;
-			}
-			else if (ch >= '1' && ch <= '9')
-			{
-				++m_pos;
-				while (m_pos != m_end && isDigit(*m_pos))
-				{
-					++m_pos;
-				}
-			}
-			else
-			{
-				result = false;
-			}	
-
-			auto do_digits = [&]() -> void
-			{
-				if (m_pos != m_end && isDigit(*m_pos))
-				{
-					++m_pos;
-					while (m_pos != m_end && isDigit(*m_pos))
-					{
-						++m_pos;
-					}
-				}
-				else
-				{
-					result = false;
-				}
-			};	
-
-			bool fraction_done = false;
-			while (result && !fraction_done && m_pos < m_end)
-			{
-				switch (*m_pos)
-				{
-				case '.':
-				{
-					++m_pos;
-					do_digits();
-				} break;
-				case 'e':
-				case 'E':
-				{
-					++m_pos;
-					if (m_pos != m_end && (*m_pos == '-' || *m_pos == '+'))
-					{
-						++m_pos;
-					}
-					do_digits();
-					fraction_done = true;
-				} break;
-				default:
-					fraction_done = true;
-				}
-			}	
-
-			return result;
+			return util::json_match_number(&m_pos, m_end);
 		}	
 
 		template <typename DuplicateKeyPolicy>
 		bool JsonParser<DuplicateKeyPolicy>::matchLiteral(const char* s, u8 len)
 		{
-			bool result = true;	
-
-			for (u8 i = 0; i < len; i++)
-			{
-				++m_pos;
-				if (m_pos == m_end || *m_pos != s[i])
-				{
-					result = false;
-					break;
-				}
-			}	
-
-			if (result)
-			{
-				++m_pos;
-			}	
-
-			return result;
+			return util::json_match_literal(&m_pos, m_end, s, len);
 		}	
 
 		template <typename DuplicateKeyPolicy>
 		int JsonParser<DuplicateKeyPolicy>::matchFloatHex()
 		{
-			int result = 0;		
-
-			u8 count = 0;
-			while (m_pos != m_end && isHexDigit(*m_pos))
-			{
-				++count;
-				++m_pos;
-			}	
-
-			if (count == 8)
-			{
-				result = 1; // float
-			}
-			else if (count == 16)
-			{
-				result = 2; // double	
-			}
-
-			return result;
-		}	
-
-		template <typename DuplicateKeyPolicy>
-		bool JsonParser<DuplicateKeyPolicy>::isDigit(char ch) const
-		{
-			return (ch >= '0' && ch <= '9');
-		}	
-
-		template <typename DuplicateKeyPolicy>
-		bool JsonParser<DuplicateKeyPolicy>::isHexDigit(char ch) const
-		{
-			return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+			return util::json_match_float_hex(&m_pos, m_end);
 		}	
 
 		template <typename DuplicateKeyPolicy>
@@ -2360,7 +2185,7 @@ namespace ers
 		template <typename DuplicateKeyPolicy>
 		bool JsonParser<DuplicateKeyPolicy>::isValid(char ch) const
 		{
-			return isWhitespace(ch) || isStructural(ch) || isDigit(ch) || ch == 't' || ch == 'f' || ch == 'n';
+			return isWhitespace(ch) || isStructural(ch) || util::is_digit(ch) || ch == 't' || ch == 'f' || ch == 'n';
 		}	
 
 		template <typename DuplicateKeyPolicy>
@@ -2377,6 +2202,221 @@ namespace ers
 
 		namespace util 
 		{
+			bool json_match_string(const char** pos, const char* end)
+			{
+				// Parse string.
+				const char* p = *pos;
+				if (p == end || *p != '\"') 
+				{
+					return false;
+				}
+				++p;
+
+				while (p < end)
+				{
+					u8 ch = *p;
+					if (ch < 0x20 || ch == '/' || ch == '\"')
+					{
+						break;
+					}
+					else if (ch == '\\')
+					{
+						++p;
+						ch = *p;
+						if (ch == '\\' || ch == '/' || ch == '\"' || ch == '0' 
+							|| ch == 'a' || ch == 'b' || ch == 't' || ch == 'v' 
+							|| ch == 'f' || ch == 'r' || ch == 'n')
+						{
+							++p;
+						}
+						else if (ch == 'u')
+						{
+							++p;
+							for (u8 count = 0; count < 4; count++)
+							{
+								if (p == end || !is_hex_digit(*p))
+								{
+									break;
+								}
+								++p;
+							}
+						}
+						else
+						{
+							break;
+						}
+					}
+					else if (ch < 0xFF)
+					{
+						++p;
+					}
+					else // assume utf-8 encoding
+					{
+						size_type len = util::utf8_len(*p);
+						if (len == 0)
+						{
+							break;
+						}
+						p += len;
+					}
+				}	
+
+				const bool result = (p != end && *p == '\"');	
+
+				// Only advance if the whole string has been accepted.
+				// If not, we are already at the start of the next token.
+				if (result)
+				{
+					++p;
+				}	
+
+				*pos = p;
+
+				return result;
+			}	
+
+			int json_match_float_hex(const char** pos, const char* end)
+			{
+				const char* p = *pos;
+
+				if (p == end || *p != '0') 
+				{	
+					return 0;
+				}
+				++p;
+
+				if (p == end || *p != 'x') 
+				{	
+					return 0;
+				}
+				++p;
+
+				u8 count = 0;
+				while (p != end && util::is_hex_digit(*p))
+				{
+					++count;
+					++p;
+				}	
+
+				*pos = p;
+				if (count == 8)
+				{
+					return 1; // float
+				}
+				else if (count == 16)
+				{
+					return 2; // double	
+				}
+
+				return 0;
+			}	
+
+			bool json_match_number(const char** pos, const char* end)
+			{
+				const char* p = *pos;
+
+				bool result = true;	
+
+				if (p != end && *p == '-')
+				{
+					++p;
+				}	
+
+				char ch = *p;
+				if (ch == '0')
+				{
+					++p;
+				}
+				else if (ch >= '1' && ch <= '9')
+				{
+					++p;
+					while (p != end && util::is_digit(*p))
+					{
+						++p;
+					}
+				}
+				else
+				{
+					result = false;
+				}	
+
+				auto do_digits = [&]() -> void
+				{
+					if (p != end && util::is_digit(*p))
+					{
+						++p;
+						while (p != end && util::is_digit(*p))
+						{
+							++p;
+						}
+					}
+					else
+					{
+						result = false;
+					}
+				};	
+
+				bool fraction_done = false;
+				while (result && !fraction_done && p < end)
+				{
+					switch (*p)
+					{
+					case '.':
+					{
+						++p;
+						do_digits();
+					} break;
+					case 'e':
+					case 'E':
+					{
+						++p;
+						if (p != end && (*p == '-' || *p == '+'))
+						{
+							++p;
+						}
+						do_digits();
+						fraction_done = true;
+					} break;
+					default:
+						fraction_done = true;
+					}
+				}	
+
+				*pos = p;
+				return result;
+			}	
+
+			bool json_match_literal(const char** pos, const char* end, const char* s, u8 len)
+			{
+				const char* p = *pos;
+
+				bool result = true;	
+
+				for (u8 i = 0; i < len; i++)
+				{					
+					if (p == end || *p != s[i])
+					{
+						result = false;
+						break;
+					}	
+					++p;			
+				}	
+
+				*pos = p;
+
+				return result;
+			}	
+
+			bool is_hex_digit(char ch)
+			{
+				return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F');
+			}	
+
+			bool is_digit(char ch)
+			{
+				return (ch >= '0' && ch <= '9');
+			}	
+
 			void print_nodes(const JsonNode* node_buffer, size_type node_count)
 			{
 #ifndef JSON_NDEBUG
