@@ -1816,7 +1816,8 @@ namespace ers
 				previous_key_ptr = last_node_ptr;
 
 				m_currentToken = getNextToken();
-				result = expect(m_currentToken.type == JsonTokenType::JSON_COLON, "colon expected"); if(!result) break;				
+				result = expect(m_currentToken.type == JsonTokenType::JSON_COLON, "colon expected"); 
+				if(!result) break;				
 
 				m_currentToken = getNextToken();
 				const bool is_primitive = isPrimitiveValueToken(&m_currentToken);
