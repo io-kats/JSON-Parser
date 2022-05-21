@@ -1701,17 +1701,18 @@ namespace ers
 			while (loop_result && m_pos < m_end)
 			{
 				m_currentToken = getNextToken();
-				const bool isArray = (m_currentToken.type == JsonTokenType::JSON_ARRAY_BEGIN);
-				const bool isObject = (m_currentToken.type == JsonTokenType::JSON_OBJECT_BEGIN);
-				loop_result = expect(isArray || isObject, "Array or object expected");
+				const bool is_array = (m_currentToken.type == JsonTokenType::JSON_ARRAY_BEGIN);
+				const bool is_object = (m_currentToken.type == JsonTokenType::JSON_OBJECT_BEGIN);
+				const bool is_primitive = isPrimitiveValueToken(&m_currentToken);
+				loop_result = expect(is_array || is_object || is_primitive, "value expected");
 				if (!loop_result) break;		
 				pushNode();	
 
-				if (isArray) 
+				if (is_array) 
 				{
 					loop_result = parseArray();
 				}
-				else if (isObject) 
+				else if (is_object) 
 				{
 					loop_result = parseObject();
 				}	
