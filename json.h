@@ -1690,14 +1690,14 @@ namespace ers
 				m_duplicateKeyPolicy.Reset();
 			} 
 
-			if (IsValid()) // if valid, do not re-tokenize.
+			if (IsValid()) // if valid, do not re-parse.
 			{
 				return;
 			}	
 
 			skipWhitespace();
 
-			bool loop_result = true; // keeps track of whether there's been errors during tokenization.	
+			bool loop_result = true; // keeps track of whether there's been errors during parsing.	
 			while (loop_result && m_pos < m_end)
 			{
 				m_currentToken = getNextToken();
