@@ -388,6 +388,7 @@ namespace ers
 		{
 			NOT_DONE = 0,
 			VALID_JSON,
+			EMPTY,
 			INVALID_TOKENS,
 			SYNTACTIC_ERRORS,
 			CAPACITY_EXCEEDED,
@@ -1697,34 +1698,41 @@ namespace ers
 
 			skipWhitespace();
 
-			bool loop_result = true; // keeps track of whether there's been errors during parsing.	
-			while (loop_result && m_pos < m_end)
+			bool result = m_pos < m_end; // keeps track of whether there's been errors during parsing.	
+			if (!result)
+			{
+				m_errorCode = JsonErrorCode::EMPTY;
+				appendToErrorLog("Syntactic error: empty JSON\n");
+				return;
+			}
+
+			while (result && m_pos < m_end)
 			{
 				m_currentToken = getNextToken();
 				const bool is_array = (m_currentToken.type == JsonTokenType::JSON_ARRAY_BEGIN);
 				const bool is_object = (m_currentToken.type == JsonTokenType::JSON_OBJECT_BEGIN);
 				const bool is_primitive = isPrimitiveValueToken(&m_currentToken);
-				loop_result = expect(is_array || is_object || is_primitive, "value expected");
-				if (!loop_result) break;		
+				result = expect(is_array || is_object || is_primitive, "value expected");
+				if (!result) break;		
 				pushNode();	
 
 				if (is_array) 
 				{
-					loop_result = parseArray();
+					result = parseArray();
 				}
 				else if (is_object) 
 				{
-					loop_result = parseObject();
+					result = parseObject();
 				}	
 			}	
 
-            if (loop_result)
+            if (result)
             {
 				m_currentToken = getNextToken();
-                loop_result = pushNode();
+                result = pushNode();
             }
 
-			if (loop_result)
+			if (result)
             {
 				m_errorCode = JsonErrorCode::VALID_JSON;
             }
