@@ -127,6 +127,19 @@ while (json_parser.GetErrorCode() == JsonErrorCode::CAPACITY_EXCEEDED)
 }
 ```
 
+or:
+
+```
+while (json_parser.GetErrorCode() == JsonErrorCode::CAPACITY_EXCEEDED)
+{
+	delete[] buf;
+	buf_size *= 2;	
+	buf = new ers::json::JsonNode[buf_size];
+	json_parser = ers::json::JsonParser(json_string, strlen(json_string), &buf[0], buf_capacity);
+	json_parser.Parse();
+}
+```
+
 You can inspect the nodes if you want:
 
 ```

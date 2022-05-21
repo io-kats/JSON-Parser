@@ -8,7 +8,7 @@ IDIR =
 ODIR = ./build
 
 CC = g++
-CFLAGS = -g -I$(IDIR) -Wall -Wpedantic
+CFLAGS = -g -I$(IDIR) -Wall -Wpedantic -Werror
 
 # Source files
 SRCC = 
