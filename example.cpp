@@ -101,7 +101,9 @@ void example_with_node_buffer()
 		buf_capacity *= 2;		
 		buf = new ers::json::JsonNode[buf_capacity];
 		printf("Re-parsing with node buffer capacity = %d...\n", (int)buf_capacity);
-		json_parser.Parse(&buf[0], buf_capacity);
+			
+		json_parser = ers::json::JsonParser(json_file.data, json_file.length, &buf[0], buf_capacity);
+		json_parser.Parse();
 		printf("Is JSON valid: %s\n", json_parser.IsValid() ? "yes" : "no");
 		if (!json_parser.IsValid())
 		{
@@ -218,6 +220,8 @@ void example_with_flat_json()
 
 	// Inspect the nodes.
 	ers::json::util::print_nodes(&flat_json[0], node_count);	
+
+	printf("\n");
 
 	// 1st example.
 	const char* path = ".Inhaber.Alter";

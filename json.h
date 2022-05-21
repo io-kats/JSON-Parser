@@ -643,6 +643,9 @@ namespace ers
 			 */
 			JsonParser(const char* data_, size_type length_, JsonNode* buffer = nullptr, size_type capacity = 0, size_type max_depth = JSON_MAX_DEPTH);
 
+			JsonParser(const JsonParser& v);
+			JsonParser& operator=(const JsonParser& v);
+
 			/**
 			 * Same as above, the non-default constructor is a wrapper over this.		 
 			 */
@@ -660,9 +663,10 @@ namespace ers
 			 * Parses the JSON file into a FlatJson instance.
 			 * 
 			 * @param flat_json FlatJson struct to parse the JSON into.
+			 * @param max_depth max JSON depth allowed.
 			 */
 			template <size_type NODE_CAPACITY>
-			void Parse(FlatJson<NODE_CAPACITY>& flat_json);
+			void Parse(FlatJson<NODE_CAPACITY>& flat_json, size_type max_depth = JSON_MAX_DEPTH);
 			
 			/**
 			 * Returns true if tokenization and parsing were successful.
@@ -1587,6 +1591,62 @@ namespace ers
 		}	
 
 		template <typename DuplicateKeyPolicy>
+		JsonParser<DuplicateKeyPolicy>::JsonParser(const JsonParser& other)
+		{
+			m_begin = other.m_begin;	
+			m_end = other.m_end;
+			m_pos = other.m_pos;
+			m_errorCode = other.m_errorCode;
+
+			m_nodeBuffer = other.m_nodeBuffer;
+			m_nodeCount = other.m_nodeCount;
+			m_tokenCapacity = other.m_tokenCapacity;
+
+			m_currentToken = other.m_currentToken;
+			m_currentLine = other.m_currentLine;
+
+			m_currentDepth = other.m_currentDepth;
+
+			JSON_ASSERTF(other.m_maxDepth <= JSON_MAX_DEPTH, "%s", "JsonParser::SetUp: The max depth cannot exceed the value of JSON_MAX_DEPTH.");
+			m_maxDepth = other.m_maxDepth;
+
+#ifndef JSON_NDEBUG
+			JSON_memcpy(&m_errorLog[0], &other.m_errorLog[0], JSON_ERROR_MESSAGE_LENGTH + 1);
+			m_errorLogPos = &m_errorLog[0];
+#endif
+		}
+
+		template <typename DuplicateKeyPolicy>
+		JsonParser<DuplicateKeyPolicy>& JsonParser<DuplicateKeyPolicy>::operator=(const JsonParser& other)
+		{
+			if (this != &other)
+			{
+				m_begin = other.m_begin;	
+				m_end = other.m_end;
+				m_pos = other.m_pos;
+				m_errorCode = other.m_errorCode;
+
+				m_nodeBuffer = other.m_nodeBuffer;
+				m_nodeCount = other.m_nodeCount;
+				m_tokenCapacity = other.m_tokenCapacity;
+
+				m_currentToken = other.m_currentToken;
+				m_currentLine = other.m_currentLine;
+
+				m_currentDepth = other.m_currentDepth;
+
+				JSON_ASSERTF(other.m_maxDepth <= JSON_MAX_DEPTH, "%s", "JsonParser::SetUp: The max depth cannot exceed the value of JSON_MAX_DEPTH.");
+				m_maxDepth = other.m_maxDepth;
+
+#ifndef JSON_NDEBUG
+				JSON_memcpy(&m_errorLog[0], &other.m_errorLog[0], JSON_ERROR_MESSAGE_LENGTH + 1);
+				m_errorLogPos = &m_errorLog[0];
+#endif	
+			}
+			return *this;
+		}
+
+		template <typename DuplicateKeyPolicy>
 		void JsonParser<DuplicateKeyPolicy>::SetUp(const char* data_, size_type length_, JsonNode* buffer, size_type capacity, size_type max_depth)
 		{
 			m_begin = data_;	
@@ -1614,10 +1674,11 @@ namespace ers
 
 		template <typename DuplicateKeyPolicy>
 		template <size_type NODE_CAPACITY>
-		void JsonParser<DuplicateKeyPolicy>::Parse(FlatJson<NODE_CAPACITY>& flat_json)
+		void JsonParser<DuplicateKeyPolicy>::Parse(FlatJson<NODE_CAPACITY>& flat_json, size_type max_depth)
 		{
+			m_maxDepth = max_depth;
 			Parse(&flat_json[0], NODE_CAPACITY);
-			flat_json.SetCount(m_nodeCount);
+			flat_json.SetCount(m_nodeCount);			
 		}
 
 		template <typename DuplicateKeyPolicy>
@@ -1625,27 +1686,11 @@ namespace ers
 		{
 			if (new_buffer != nullptr)
 			{
-				m_pos = m_begin;
-				m_errorCode = JsonErrorCode::NOT_DONE;
-
-				m_nodeBuffer = new_buffer;
-				m_nodeCount = 0;
-				m_tokenCapacity = new_capacity;
-
-				m_currentLine = 1;
-
-				m_currentDepth = 0;
-
+				SetUp(m_begin, m_end - m_begin, new_buffer, new_capacity, m_maxDepth);
 				m_duplicateKeyPolicy.Reset();
-
-#ifndef JSON_NDEBUG
-				JSON_memset(&m_errorLog[0], 0, JSON_ERROR_MESSAGE_LENGTH + 1);
-				m_errorLogPos = &m_errorLog[0];
-#endif
 			} 
 
-			const bool is_valid = IsValid();
-			if (is_valid) // if valid, do not re-tokenize.
+			if (IsValid()) // if valid, do not re-tokenize.
 			{
 				return;
 			}	
