@@ -388,6 +388,7 @@ namespace ers
 		{
 			NOT_DONE = 0,
 			VALID_JSON,
+			EMPTY,
 			INVALID_TOKENS,
 			SYNTACTIC_ERRORS,
 			CAPACITY_EXCEEDED,
@@ -1690,40 +1691,48 @@ namespace ers
 				m_duplicateKeyPolicy.Reset();
 			} 
 
-			if (IsValid()) // if valid, do not re-tokenize.
+			if (IsValid()) // if valid, do not re-parse.
 			{
 				return;
 			}	
 
 			skipWhitespace();
 
-			bool loop_result = true; // keeps track of whether there's been errors during tokenization.	
-			while (loop_result && m_pos < m_end)
+			bool result = m_pos < m_end; // keeps track of whether there's been errors during parsing.	
+			if (!result)
+			{
+				m_errorCode = JsonErrorCode::EMPTY;
+				appendToErrorLog("Syntactic error: empty JSON\n");
+				return;
+			}
+
+			while (result && m_pos < m_end)
 			{
 				m_currentToken = getNextToken();
-				const bool isArray = (m_currentToken.type == JsonTokenType::JSON_ARRAY_BEGIN);
-				const bool isObject = (m_currentToken.type == JsonTokenType::JSON_OBJECT_BEGIN);
-				loop_result = expect(isArray || isObject, "Array or object expected");
-				if (!loop_result) break;		
+				const bool is_array = (m_currentToken.type == JsonTokenType::JSON_ARRAY_BEGIN);
+				const bool is_object = (m_currentToken.type == JsonTokenType::JSON_OBJECT_BEGIN);
+				const bool is_primitive = isPrimitiveValueToken(&m_currentToken);
+				result = expect(is_array || is_object || is_primitive, "value expected");
+				if (!result) break;		
 				pushNode();	
 
-				if (isArray) 
+				if (is_array) 
 				{
-					loop_result = parseArray();
+					result = parseArray();
 				}
-				else if (isObject) 
+				else if (is_object) 
 				{
-					loop_result = parseObject();
+					result = parseObject();
 				}	
 			}	
 
-            if (loop_result)
+            if (result)
             {
 				m_currentToken = getNextToken();
-                loop_result = pushNode();
+                result = pushNode();
             }
 
-			if (loop_result)
+			if (result)
             {
 				m_errorCode = JsonErrorCode::VALID_JSON;
             }
