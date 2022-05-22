@@ -167,7 +167,7 @@ EOF: done!
 print_nodes can be disabled by defining JSON_NDEBUG 
 before including the header file.
 
-You can also print out an error message if there's an error (can be disabled if macro NDEBUG defined):
+You can also print out an error message if there's an error (can be disabled if macro `NDEBUG` defined):
 
 ```
 if (!json_parser.IsValid())
@@ -186,6 +186,7 @@ Invalid token at line 2: null expected
         "x" : 1.5,
 ...
 ```
+You can disable logging by defining the `JSON_NO_LOGGING` macro before including `json.h`.
 
 You can control the duplicate property key checking policy like this:
 ```
@@ -290,7 +291,7 @@ debugging facilities, including some methods:
 ```
 
 and strtod can be replaced 
-with your own implementation by defining the macro JSON_STRTOD(dest, begin, end),
+with your own implementation by defining the macro `JSON_STRTOD(dest, begin, end)`,
 for example if you want to use charconv's "from_chars":
 
 ```

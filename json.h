@@ -55,8 +55,12 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 		#define JSON_memcmp memcmp
 	#endif
 
+	#ifndef JSON_NO_LOGGING
+		#include <cstdio> // vsnprintf
+	#endif
+
 	#ifndef JSON_NDEBUG
-		#include <cstdio> // printf, fprintf, vsnprintf
+		#include <cstdio> // printf, fprintf
 		#include <cerrno> // errno
 		#include <cstring> // strerror
 		#include <cstdarg> // va_start, va_end
@@ -619,7 +623,7 @@ namespace ers
 			JsonKeyHashSet m_keyHashSet;
 		};
 
-#ifndef JSON_NDEBUG
+#ifndef JSON_NO_LOGGING
 		constexpr size_type JSON_ERROR_MESSAGE_LENGTH = 255;
 #endif
 		constexpr size_type JSON_MAX_DEPTH = SIZE_TYPE_MAX;
@@ -784,7 +788,9 @@ namespace ers
 			 */
 			bool matchString(); // For JSON-style strings.
 			bool matchNumber(); // For JSON-style numbers.
-			bool matchLiteral(const char* s, u8 len);  // For true, false and null.
+			bool matchTrue();  // For true.
+			bool matchFalse();  // For false.
+			bool matchNull();  // For null.
 			int matchFloatHex(); // Return value: 0 - false, 1 - float, 2 - double
 
 			/**
@@ -814,7 +820,7 @@ namespace ers
 
 			DuplicateKeyPolicy m_duplicateKeyPolicy;
 
-#ifndef JSON_NDEBUG
+#ifndef JSON_NO_LOGGING
 			char m_errorLog[JSON_ERROR_MESSAGE_LENGTH + 1];
 			char* m_errorLogPos;
 #endif
@@ -1688,7 +1694,7 @@ namespace ers
 			JSON_ASSERTF(other.m_maxDepth <= JSON_MAX_DEPTH, "%s", "JsonParser::SetUp: The max depth cannot exceed the value of JSON_MAX_DEPTH.");
 			m_maxDepth = other.m_maxDepth;
 
-#ifndef JSON_NDEBUG
+#ifndef JSON_NO_LOGGING
 			JSON_memcpy(&m_errorLog[0], &other.m_errorLog[0], JSON_ERROR_MESSAGE_LENGTH + 1);
 			m_errorLogPos = &m_errorLog[0];
 #endif
@@ -1716,7 +1722,7 @@ namespace ers
 				JSON_ASSERTF(other.m_maxDepth <= JSON_MAX_DEPTH, "%s", "JsonParser::SetUp: The max depth cannot exceed the value of JSON_MAX_DEPTH.");
 				m_maxDepth = other.m_maxDepth;
 
-#ifndef JSON_NDEBUG
+#ifndef JSON_NO_LOGGING
 				JSON_memcpy(&m_errorLog[0], &other.m_errorLog[0], JSON_ERROR_MESSAGE_LENGTH + 1);
 				m_errorLogPos = &m_errorLog[0];
 #endif	
@@ -1744,7 +1750,7 @@ namespace ers
 			JSON_ASSERTF(max_depth <= JSON_MAX_DEPTH, "%s", "JsonParser::SetUp: The max depth cannot exceed the value of JSON_MAX_DEPTH.");
 			m_maxDepth = max_depth;
 
-#ifndef JSON_NDEBUG
+#ifndef JSON_NO_LOGGING
 			JSON_memset(&m_errorLog[0], 0, JSON_ERROR_MESSAGE_LENGTH + 1);
 			m_errorLogPos = &m_errorLog[0];
 #endif
@@ -2002,7 +2008,7 @@ namespace ers
 		template <typename DuplicateKeyPolicy>
 		void JsonParser<DuplicateKeyPolicy>::appendToErrorLog(const char* fmt, ...)
 		{
-#ifndef JSON_NDEBUG
+#ifndef JSON_NO_LOGGING
 			va_list args;
 			va_start(args, fmt);
 
@@ -2021,7 +2027,7 @@ namespace ers
 		template <typename DuplicateKeyPolicy>	
 		void JsonParser<DuplicateKeyPolicy>::logInvalidTokenPosition() 
 		{
-#ifndef JSON_NDEBUG
+#ifndef JSON_NO_LOGGING
 			const char* begin = m_currentToken.data;
 			const char* end = m_currentToken.data + m_currentToken.length;
 
@@ -2072,6 +2078,7 @@ namespace ers
 
 			const char* start = m_pos;			
 			result.data = start;
+			result.type = JsonTokenType::INVALID;
 
             if (m_pos >= m_end) {
                 result.length = 0;
@@ -2117,19 +2124,19 @@ namespace ers
 			}
 			else if (ch == 't')
 			{
-				result.type = (matchLiteral("true", 4)) ?
+				result.type = (matchTrue()) ?
 					JsonTokenType::JSON_TRUE : JsonTokenType::INVALID;
 				logInvalidTokenError(result.type, "true expected");
 			}
 			else if (ch == 'f')
 			{
-				result.type = (matchLiteral("false", 5)) ?
+				result.type = (matchFalse()) ?
 					JsonTokenType::JSON_FALSE : JsonTokenType::INVALID;
 				logInvalidTokenError(result.type, "false expected");
 			}
 			else if (ch == 'n')
 			{
-				result.type = (matchLiteral("null", 4)) ?
+				result.type = (matchNull()) ?
 					JsonTokenType::JSON_NULL : JsonTokenType::INVALID;
 				logInvalidTokenError(result.type, "null expected");
 			}
@@ -2163,7 +2170,7 @@ namespace ers
 				result.type = JsonTokenType::JSON_COMMA;
 				++m_pos;
 			}
-			else // Invalid case.
+			else // General invalid case.
 			{			
 				result.type = JsonTokenType::INVALID;				
 				appendToErrorLog("Invalid token at line %u\n", (u32)m_currentLine);
@@ -2212,9 +2219,9 @@ namespace ers
 		template <typename DuplicateKeyPolicy>
 		const char* JsonParser<DuplicateKeyPolicy>::GetErrorMessage() const
 		{
-#ifndef JSON_NDEBUG
+#ifndef JSON_NO_LOGGING
 			return m_errorLog;
-#elif
+#else
 			return "";
 #endif
 		}
@@ -2232,9 +2239,21 @@ namespace ers
 		}	
 
 		template <typename DuplicateKeyPolicy>
-		bool JsonParser<DuplicateKeyPolicy>::matchLiteral(const char* s, u8 len)
+		bool JsonParser<DuplicateKeyPolicy>::matchTrue()
 		{
-			return util::json_match_literal(&m_pos, m_end, s, len);
+			return util::json_match_literal(&m_pos, m_end, "true", 4);
+		}	
+
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::matchFalse()
+		{
+			return util::json_match_literal(&m_pos, m_end, "false", 4);
+		}	
+
+		template <typename DuplicateKeyPolicy>
+		bool JsonParser<DuplicateKeyPolicy>::matchNull()
+		{
+			return util::json_match_literal(&m_pos, m_end, "null", 4);
 		}	
 
 		template <typename DuplicateKeyPolicy>
@@ -2286,6 +2305,21 @@ namespace ers
 				++p;
 
 				*pos = p;
+				return true;
+			}
+
+			bool match_utf8(const char** pos, const char* end)
+			{
+				const char* p = *pos;
+
+				size_type len = util::utf8_len(*p);
+				const char* q = p + len;
+				if (len == 0 || q >= end)
+				{
+					return false;
+				}
+
+				*pos = q;
 				return true;
 			}
 
@@ -2375,11 +2409,7 @@ namespace ers
 					}
 					else if (match_character(&p, end, '\\'))
 					{
-						if (match_any(&p, end, "\"\\/0abtvfrn", 11))
-						{
-							// do nothing
-						}
-						else if (match_character(&p, end, 'u'))
+						if (match_character(&p, end, 'u'))
 						{
 							for (u8 count = 0; count < 4; count++)
 							{
@@ -2389,28 +2419,17 @@ namespace ers
 								}
 							}
 						}
-						else 
+						else if (!match_any(&p, end, "\"\\/0abtvfrn", 11))
 						{
 							break;
 						}
 					}
-					else if (match_range(&p, end, 0, 0xFF))
+					else if (!match_utf8(&p, end)) // assume utf-8 encoding
 					{
-						// do nothing
-					}
-					else // assume utf-8 encoding
-					{
-						size_type len = util::utf8_len(*p);
-						if (len == 0)
-						{
-							break;
-						}
-						p += len;
+						break;
 					}
 				}	
 
-				// Only advance if the whole string has been accepted.
-				// If not, we are already at the start of the next token.
 				const bool result = (match_character(&p, end, '\"'));	
 
 				*pos = p;
@@ -2716,7 +2735,7 @@ namespace ers
 							}	
 
 							JSON_ASSERTF(codepoint < 0x110000,
-								"%s", "JsonParser<DuplicateKeyPolicy>::json_string_to_utf8: Invalid codepoint.");	
+								"%s", "json_string_to_utf8: Invalid codepoint.");	
 
 							// Decode to UTF-8
 							if (out)
@@ -2781,7 +2800,7 @@ namespace ers
 									*out++ = '\n';
 									break;
 								default:
-									JSON_ASSERTF(false, "%s", "JsonParser<DuplicateKeyPolicy>::json_string_to_utf8: unreachable.");
+									JSON_ASSERTF(false, "%s", "json_string_to_utf8: unreachable.");
 								}
 								++p;
 							}
@@ -2790,7 +2809,7 @@ namespace ers
 								JSON_ASSERTF(
 									ch == '0' || ch == 'a' ||  ch == 'b' ||  ch == 't' ||  ch == 'v' ||  ch == 'f' ||  ch == 'r' ||  ch == 'n', 
 									"%s", 
-									"JsonParser<DuplicateKeyPolicy>::json_string_to_utf8: problem with escaped characters.");
+									"json_string_to_utf8: problem with escaped characters.");
 								++p;
 								++len;
 							}	
