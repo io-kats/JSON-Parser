@@ -780,7 +780,7 @@ namespace ers
 			JsonToken getNextToken();
 
 			/**
-			 * Matching functions for producing tokens.
+			 * Matching functions for producing tokens. Check the util namespace for more details.
 			 */
 			bool matchString(); // For JSON-style strings.
 			bool matchNumber(); // For JSON-style numbers.
@@ -822,12 +822,85 @@ namespace ers
 
 		namespace util 
 		{
+			/** 
+			 * Matching functions used for the JSON parser for:
+			 * - a single character.
+			 * - a single digit.
+			 * - a string of digits.
+			 * - a single hex digit.
+			 * 
+			 * @param pos a pointer to a pointer to the current position in the parser. Its value is incremented if there was a match.
+			 * @param end a pointer to the position where parsing stops i.e. EOF or just past the end of the string pointed to by *pos.
+			 * @return true if there is a match, false otherwise.
+			 */
+			bool match_character(const char** pos, const char* end, char ch);
+			bool match_digit(const char** pos, const char* end);
+			bool match_digits(const char** pos, const char* end);
+			bool match_hex_digit(const char** pos, const char* end);			
+			
+			/**
+			 * Matches a range of characters.
+			 * 
+			 * @param pos a pointer to a pointer to the current poisition in the parser. Its value is incremented if there was a match.
+			 * @param end a pointer to the position where parsing stops i.e. EOF or just past the end of the string pointed to by *pos.
+			 * @param min_char the minimum character to be matched.
+			 * @param max_char the maximum character to be matched.
+			 * @return true if there is a match, false otherwise.
+			 */
+			bool match_range(const char** pos, const char* end, u8 min_char, u8 max_char);
+			
+			/**
+			 * Matches at least one of a given string of characters.
+			 * 
+			 * @param pos a pointer to a pointer to the current position in the parser. Its value is incremented if there was a match.
+			 * @param end a pointer to the position where parsing stops i.e. EOF or just past the end of the string pointed to by *pos.
+			 * @param s a pointer to the string containing the characters to be matched.
+			 * @param len the length of s.
+			 * @return true if there is a match, false otherwise.
+			 */
+			bool match_any(const char** pos, const char* end, const char* s, size_t len);
+
+			/**
+			 * JSON matching functions for:
+			 * - a JSON-style string.
+			 * - a 32-/64-bit representation of a of a single/double precision floating point number.
+			 * - a JSON-style number.
+			 * 
+			 * @param pos a pointer to a pointer to the current position in the parser. Its value is incremented if there was a match.
+			 * @param end a pointer to the position where parsing stops i.e. EOF or just past the end of the string pointed to by *pos.
+			 * @return true if there is a match, false otherwise.
+			 */
 			bool json_match_string(const char** pos, const char* end);
-			int json_match_float_hex(const char** pos, const char* end);
-			bool json_match_literal(const char** pos, const char* end, const char* s, u8 len);
+			int json_match_float_hex(const char** pos, const char* end);			
 			bool json_match_number(const char** pos, const char* end);
+
+			/**
+			 * Matches a string literal.
+			 * 
+			 * @param pos a pointer to a pointer to the current position in the parser. Its value is incremented if there was a match.
+			 * @param end a pointer to the position where parsing stops i.e. EOF or just past the end of the string pointed to by *pos.
+			 * @param s a pointer to the string to be matched.
+			 * @param len the length of s.
+			 * @return true if there is a match, false otherwise.
+			 */
+			bool json_match_literal(const char** pos, const char* end, const char* s, u8 len);
+
+			/**
+			 * Checks if a character is a digit.
+			 * 
+			 * @param ch the character to be checked.
+			 * @return true if it is a digit, false otherwise.
+			 */
 			bool is_digit(char ch);
+
+			/**
+			 * Checks if a character is a hexadecimal digit.
+			 * 
+			 * @param ch the character to be checked.
+			 * @return true if it is a hexadecimal digit, false otherwise.
+			 */
 			bool is_hex_digit(char ch);
+
 			/**
 			 * Prints all JSON node from a buffer. If JSON_NDEBUG is defined, the function does nothing.
 			 */
@@ -2202,53 +2275,128 @@ namespace ers
 
 		namespace util 
 		{
-			bool json_match_string(const char** pos, const char* end)
+			bool match_character(const char** pos, const char* end, char ch)
 			{
-				// Parse string.
 				const char* p = *pos;
-				if (p == end || *p != '\"') 
+
+				if (p == end || *p != ch) 
 				{
 					return false;
 				}
 				++p;
 
+				*pos = p;
+				return true;
+			}
+
+			bool match_range(const char** pos, const char* end, u8 min_char, u8 max_char)
+			{
+				const char* p = *pos;
+
+				u8 ch = *p;
+				if (p == end || ch < min_char || ch > max_char) 
+				{
+					return false;
+				}
+				++p;
+
+				*pos = p;
+				return true;
+			}
+
+			bool match_digit(const char** pos, const char* end)
+			{
+				const char* p = *pos;
+
+				if (p == end || !util::is_digit(*p)) 
+				{
+					return false;
+				}
+				++p;
+
+				*pos = p;
+				return true;
+			}
+
+			bool match_hex_digit(const char** pos, const char* end)
+			{
+				const char* p = *pos;
+
+				if (p == end || !util::is_hex_digit(*p)) 
+				{
+					return false;
+				}
+				++p;
+
+				*pos = p;
+				return true;
+			}
+			
+			bool match_digits(const char** pos, const char* end)
+			{
+				if (!match_digit(pos, end))
+				{
+					return false;
+				}
+
+				while (match_digit(pos, end))
+					;
+				
+				return true;
+			}
+
+			bool match_any(const char** pos, const char* end, const char* s, size_t len)
+			{
+				for (size_t i = 0; i < len; ++i)
+				{
+					if (match_character(pos, end, s[i]))
+					{
+						return true;
+					}		
+				}
+				return false;
+			}
+
+			bool json_match_string(const char** pos, const char* end)
+			{
+				const char* p = *pos;
+
+				// Parse string.
+				if (!match_character(&p, end, '\"')) 
+				{
+					return false;
+				}
+
 				while (p < end)
 				{
-					u8 ch = *p;
-					if (ch < 0x20 || ch == '/' || ch == '\"')
+					if (*p < 0x20 || *p == '/' || *p == '\"')
 					{
 						break;
 					}
-					else if (ch == '\\')
+					else if (match_character(&p, end, '\\'))
 					{
-						++p;
-						ch = *p;
-						if (ch == '\\' || ch == '/' || ch == '\"' || ch == '0' 
-							|| ch == 'a' || ch == 'b' || ch == 't' || ch == 'v' 
-							|| ch == 'f' || ch == 'r' || ch == 'n')
+						if (match_any(&p, end, "\"\\/0abtvfrn", 11))
 						{
-							++p;
+							// do nothing
 						}
-						else if (ch == 'u')
+						else if (match_character(&p, end, 'u'))
 						{
-							++p;
 							for (u8 count = 0; count < 4; count++)
 							{
-								if (p == end || !is_hex_digit(*p))
+								if (!match_hex_digit(&p, end))
 								{
 									break;
 								}
-								++p;
 							}
 						}
-						else
+						else 
 						{
 							break;
 						}
 					}
-					else if (ch < 0xFF)
+					else if (match_range(&p, end, 0, 0xFF))
 					{
-						++p;
+						// do nothing
 					}
 					else // assume utf-8 encoding
 					{
@@ -2261,14 +2409,9 @@ namespace ers
 					}
 				}	
 
-				const bool result = (p != end && *p == '\"');	
-
 				// Only advance if the whole string has been accepted.
 				// If not, we are already at the start of the next token.
-				if (result)
-				{
-					++p;
-				}	
+				const bool result = (match_character(&p, end, '\"'));	
 
 				*pos = p;
 
@@ -2277,28 +2420,22 @@ namespace ers
 
 			int json_match_float_hex(const char** pos, const char* end)
 			{
-				const char* p = *pos;
-
-				if (p == end || *p != '0') 
+				if (!match_character(pos, end, '0')) 
 				{	
 					return 0;
 				}
-				++p;
 
-				if (p == end || *p != 'x') 
+				if (!match_character(pos, end, 'x')) 
 				{	
 					return 0;
 				}
-				++p;
 
 				u8 count = 0;
-				while (p != end && util::is_hex_digit(*p))
+				while (match_hex_digit(pos, end))
 				{
 					++count;
-					++p;
 				}	
 
-				*pos = p;
 				if (count == 8)
 				{
 					return 1; // float
@@ -2313,98 +2450,41 @@ namespace ers
 
 			bool json_match_number(const char** pos, const char* end)
 			{
-				const char* p = *pos;
+				match_character(pos, end, '-');
 
-				bool result = true;	
-
-				if (p != end && *p == '-')
+				if (!match_character(pos, end, '0') && !match_digits(pos, end))
 				{
-					++p;
-				}	
-
-				char ch = *p;
-				if (ch == '0')
-				{
-					++p;
+					return false;
 				}
-				else if (ch >= '1' && ch <= '9')
+
+				if (match_character(pos, end, '.') && !match_digits(pos, end))
 				{
-					++p;
-					while (p != end && util::is_digit(*p))
+					return false;
+				}
+
+				if (match_any(pos, end, "eE", 2))
+				{
+					match_any(pos, end, "+-", 2);
+					if (!match_digits(pos, end))
 					{
-						++p;
+						return false;
 					}
 				}
-				else
-				{
-					result = false;
-				}	
-
-				auto do_digits = [&]() -> void
-				{
-					if (p != end && util::is_digit(*p))
-					{
-						++p;
-						while (p != end && util::is_digit(*p))
-						{
-							++p;
-						}
-					}
-					else
-					{
-						result = false;
-					}
-				};	
-
-				bool fraction_done = false;
-				while (result && !fraction_done && p < end)
-				{
-					switch (*p)
-					{
-					case '.':
-					{
-						++p;
-						do_digits();
-					} break;
-					case 'e':
-					case 'E':
-					{
-						++p;
-						if (p != end && (*p == '-' || *p == '+'))
-						{
-							++p;
-						}
-						do_digits();
-						fraction_done = true;
-					} break;
-					default:
-						fraction_done = true;
-					}
-				}	
-
-				*pos = p;
-				return result;
+				
+				return true;
 			}	
 
 			bool json_match_literal(const char** pos, const char* end, const char* s, u8 len)
 			{
-				const char* p = *pos;
-
-				bool result = true;	
-
 				for (u8 i = 0; i < len; i++)
 				{					
-					if (p == end || *p != s[i])
+					if (!match_character(pos, end, s[i]))
 					{
-						result = false;
-						break;
-					}	
-					++p;			
+						return false;
+					}				
 				}	
 
-				*pos = p;
-
-				return result;
+				return true;
 			}	
 
 			bool is_hex_digit(char ch)
