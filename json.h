@@ -2638,7 +2638,7 @@ namespace ers
 							result = (u32)'\n';
 							break;
 						default:
-							JSON_ASSERTF(false, "%s", "JsonParser<DuplicateKeyPolicy>::json_string_character_to_codepoint.");
+							JSON_ASSERTF(false, "%s", "json_string_character_to_codepoint.");
 						}				
 					}
 				}
@@ -2835,19 +2835,21 @@ namespace ers
 				return result;
 			}	
 
+			constexpr string_view MAX_U64_SV = string_view::from_c_str("18446744073709551615");
 			size_type to_u64(const char* s, const char* end, u64* out) 
 			{
 				const char* p = s;
 
 				u64 n = 0;
-				while (p != end && *p >= '0' && *p <= '9')
+				while (p != end && util::is_digit(*p))
 				{
 					n = n * 10 + (u64)(*p - '0');
 					++p;
 				}	
 
 				size_t result = p - s;
-				if (result > 20 || (result == 20 && JSON_memcmp(s, "18446744073709551615", 20) > 0)) 
+				if (result > MAX_U64_SV.length 
+					|| (result == MAX_U64_SV.length && JSON_memcmp(s, MAX_U64_SV.data, MAX_U64_SV.length) > 0)) 
 				{
 					result = 0;
 				}
@@ -2856,6 +2858,8 @@ namespace ers
 				return result;
 			}
 
+			constexpr string_view MAX_S64_SV = string_view::from_c_str("9223372036854775807");
+			constexpr string_view MIN_S64_SV = string_view::from_c_str("-9223372036854775808");
 			size_type to_s64(const char* s, const char* end, s64* out) 
 			{
 				const char* p = s;
@@ -2868,15 +2872,15 @@ namespace ers
 				}
 
 				s64 n = 0;
-				while (p != end && *p >= '0' && *p <= '9')
+				while (p != end && util::is_digit(*p))
 				{
 					n = n * 10 + (s64)(*p - '0');
 					++p;
 				}	
 
 				size_t result = p - s;
-				if ((!sign && (result > 19 || (result == 19 && JSON_memcmp(s, "9223372036854775807", 19) > 0)))
-					|| (sign && (result > 20 || (result == 20 && JSON_memcmp(s, "-9223372036854775808", 20) > 0)))
+				if ((!sign && (result > MAX_S64_SV.length || (result == MAX_S64_SV.length && JSON_memcmp(s, MAX_S64_SV.data, MAX_S64_SV.length) > 0)))
+					|| (sign && (result > MIN_S64_SV.length || (result == MIN_S64_SV.length && JSON_memcmp(s, MIN_S64_SV.data, MIN_S64_SV.length) > 0)))
 					) 
 				{
 					result = 0;
