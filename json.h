@@ -2403,7 +2403,7 @@ namespace ers
 
 				while (p < end)
 				{
-					if (*p < 0x20 || *p == '/' || *p == '\"')
+					if (*p < 0x20 || *p == '\"')
 					{
 						break;
 					}
@@ -2419,7 +2419,7 @@ namespace ers
 								}
 							}
 						}
-						else if (!match_any(&p, end, "\"\\/0abtvfrn", 11))
+						else if (!match_any(&p, end, "\"\\/bfnrt", 8))
 						{
 							break;
 						}
@@ -2633,20 +2633,11 @@ namespace ers
 						len += 1;
 						switch (ch)
 						{
-						case '0':
-							result = (u32)'\0';
-							break;
-						case 'a':
-							result = (u32)'\a';
-							break;
 						case 'b':
 							result = (u32)'\b';
 							break;
 						case 't':
 							result = (u32)'\t';
-							break;
-						case 'v':
-							result = (u32)'\v';
 							break;
 						case 'f':
 							result = (u32)'\f';
@@ -2775,20 +2766,11 @@ namespace ers
 							{
 								switch (ch)
 								{
-								case '0':
-									*out++ = '\0';
-									break;
-								case 'a':
-									*out++ = '\a';
-									break;
 								case 'b':
 									*out++ = '\b';
 									break;
 								case 't':
 									*out++ = '\t';
-									break;
-								case 'v':
-									*out++ = '\v';
 									break;
 								case 'f':
 									*out++ = '\f';
@@ -2807,7 +2789,7 @@ namespace ers
 							else
 							{
 								JSON_ASSERTF(
-									ch == '0' || ch == 'a' ||  ch == 'b' ||  ch == 't' ||  ch == 'v' ||  ch == 'f' ||  ch == 'r' ||  ch == 'n', 
+									ch == 'b' ||  ch == 't' ||  ch == 'f' ||  ch == 'r' ||  ch == 'n', 
 									"%s", 
 									"json_string_to_utf8: problem with escaped characters.");
 								++p;
