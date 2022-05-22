@@ -274,6 +274,9 @@ namespace ers
 		{
 			const char* data;
 			size_type length;
+
+			template<size_t N>
+			static constexpr string_view from_c_str(const char (&str)[N]);
 		};
 
 		struct JsonNode
@@ -624,12 +627,17 @@ namespace ers
 		};
 
 #ifndef JSON_NO_LOGGING
-		constexpr size_type JSON_ERROR_MESSAGE_LENGTH = 255;
+		constexpr size_type JSON_ERROR_MESSAGE_LENGTH = 1024;
 #endif
 		constexpr size_type JSON_MAX_DEPTH = SIZE_TYPE_MAX;
 		template <typename DuplicateKeyPolicy = EmptyDuplicateKeyPolicy>
 		class JsonParser
 		{
+		public:
+			static constexpr string_view TRUE_SV = string_view::from_c_str("true");
+			static constexpr string_view FALSE_SV = string_view::from_c_str("false");
+			static constexpr string_view NULL_SV = string_view::from_c_str("null");
+
 		public:
 
 			JsonParser() = default;
@@ -845,17 +853,6 @@ namespace ers
 			bool match_hex_digit(const char** pos, const char* end);			
 			
 			/**
-			 * Matches a range of characters.
-			 * 
-			 * @param pos a pointer to a pointer to the current poisition in the parser. Its value is incremented if there was a match.
-			 * @param end a pointer to the position where parsing stops i.e. EOF or just past the end of the string pointed to by *pos.
-			 * @param min_char the minimum character to be matched.
-			 * @param max_char the maximum character to be matched.
-			 * @return true if there is a match, false otherwise.
-			 */
-			bool match_range(const char** pos, const char* end, u8 min_char, u8 max_char);
-			
-			/**
 			 * Matches at least one of a given string of characters.
 			 * 
 			 * @param pos a pointer to a pointer to the current position in the parser. Its value is incremented if there was a match.
@@ -1027,6 +1024,12 @@ namespace ers
 {
 	namespace json
 	{
+		template<size_t N>
+		constexpr string_view string_view::from_c_str(const char (&str)[N])
+		{
+			return { &str[0], N - 1 };
+		}
+
 		JsonNode::JsonNode(const JsonToken& token)
 		{
 			as_sv.data = token.data;
@@ -2241,19 +2244,19 @@ namespace ers
 		template <typename DuplicateKeyPolicy>
 		bool JsonParser<DuplicateKeyPolicy>::matchTrue()
 		{
-			return util::json_match_literal(&m_pos, m_end, "true", 4);
+			return util::json_match_literal(&m_pos, m_end, TRUE_SV.data, TRUE_SV.length);
 		}	
 
 		template <typename DuplicateKeyPolicy>
 		bool JsonParser<DuplicateKeyPolicy>::matchFalse()
 		{
-			return util::json_match_literal(&m_pos, m_end, "false", 4);
+			return util::json_match_literal(&m_pos, m_end, FALSE_SV.data, FALSE_SV.length);
 		}	
 
 		template <typename DuplicateKeyPolicy>
 		bool JsonParser<DuplicateKeyPolicy>::matchNull()
 		{
-			return util::json_match_literal(&m_pos, m_end, "null", 4);
+			return util::json_match_literal(&m_pos, m_end, NULL_SV.data, NULL_SV.length);
 		}	
 
 		template <typename DuplicateKeyPolicy>
@@ -2323,21 +2326,6 @@ namespace ers
 				return true;
 			}
 
-			bool match_range(const char** pos, const char* end, u8 min_char, u8 max_char)
-			{
-				const char* p = *pos;
-
-				u8 ch = *p;
-				if (p == end || ch < min_char || ch > max_char) 
-				{
-					return false;
-				}
-				++p;
-
-				*pos = p;
-				return true;
-			}
-
 			bool match_digit(const char** pos, const char* end)
 			{
 				const char* p = *pos;
@@ -2391,6 +2379,7 @@ namespace ers
 				return false;
 			}
 
+			constexpr string_view ESCAPED_CHARACTERS_SV = string_view::from_c_str("\"\\/bfnrt"); //... bar '\u' which is handled seperately on its own.
 			bool json_match_string(const char** pos, const char* end)
 			{
 				const char* p = *pos;
@@ -2419,7 +2408,7 @@ namespace ers
 								}
 							}
 						}
-						else if (!match_any(&p, end, "\"\\/bfnrt", 8))
+						else if (!match_any(&p, end, ESCAPED_CHARACTERS_SV.data, ESCAPED_CHARACTERS_SV.length))
 						{
 							break;
 						}
